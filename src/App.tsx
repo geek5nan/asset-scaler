@@ -21,7 +21,7 @@ interface ConvertedImage {
 
 // Extended ImageFile with processing state
 interface ProcessingFile extends ImageFile {
-  status: 'pending' | 'processing' | 'done' | 'error'
+  status: 'ready' | 'processing' | 'done' | 'error'  // ready = uploaded, waiting for download
   progress: number
   convertedImages?: ConvertedImage[] // 存储各密度的转换结果
   error?: string
@@ -35,7 +35,6 @@ function App() {
   const [isDragging, setIsDragging] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const processingRef = useRef(false)
 
   // Load config from localStorage on mount
   useEffect(() => {
@@ -50,75 +49,7 @@ function App() {
     saveConfig(config)
   }, [config])
 
-  // Auto-process files when added
-  useEffect(() => {
-    const pendingFiles = files.filter(f => f.status === 'pending')
-    if (pendingFiles.length > 0 && !processingRef.current) {
-      processFiles(pendingFiles)
-    }
-  }, [files])
-
-  const processFiles = async (pendingFiles: ProcessingFile[]) => {
-    processingRef.current = true
-    const densities = calculateDensities(config.inputScale)
-    const allDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi', 'drawable'] as const
-
-    for (const file of pendingFiles) {
-      setFiles(prev => prev.map(f =>
-        f.id === file.id ? { ...f, status: 'processing' as const, progress: 0 } : f
-      ))
-
-      try {
-        const convertedImages: ConvertedImage[] = []
-
-        const img = new Image()
-        img.src = file.preview
-
-        await new Promise<void>((resolve, reject) => {
-          img.onload = async () => {
-            try {
-              // 只处理用户选中的密度
-              const selectedDensities = config.selectedDensities
-              const totalSteps = selectedDensities.length
-              let currentStep = 0
-
-              for (const densityName of allDensities) {
-                if (!selectedDensities.includes(densityName)) continue
-
-                const density = densityName === 'drawable' ? densities.mdpi : densities[densityName]
-                const width = Math.round(file.width * density.scale)
-                const height = Math.round(file.height * density.scale)
-                const canvas = resizeImage(img, width, height)
-                const webpBlob = await canvasToWebP(canvas, config.quality, config.lossless)
-
-                const folderName = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
-                convertedImages.push({ density: folderName, blob: webpBlob })
-
-                currentStep++
-                setFiles(prev => prev.map(f =>
-                  f.id === file.id ? { ...f, progress: Math.round((currentStep / totalSteps) * 100) } : f
-                ))
-              }
-
-              // 保存转换结果
-              setFiles(prev => prev.map(f =>
-                f.id === file.id ? { ...f, status: 'done' as const, progress: 100, convertedImages } : f
-              ))
-              resolve()
-            } catch (error) {
-              reject(error)
-            }
-          }
-          img.onerror = () => reject(new Error('Failed to load image'))
-        })
-      } catch (error) {
-        setFiles(prev => prev.map(f =>
-          f.id === file.id ? { ...f, status: 'error' as const, error: '转换失败' } : f
-        ))
-      }
-    }
-    processingRef.current = false
-  }
+  // No auto-process - conversion happens when user clicks download
 
   const handleFileSelect = useCallback(async (selectedFiles: FileList | null) => {
     if (!selectedFiles) return
@@ -132,7 +63,7 @@ function App() {
       const imageFiles = await Promise.all(fileArray.map(createImageFile))
       const processingFiles: ProcessingFile[] = imageFiles.map(f => ({
         ...f,
-        status: 'pending' as const,
+        status: 'ready' as const,  // Ready for download, not yet processed
         progress: 0,
         outputName: f.name.replace(/\.[^.]+$/, '')
       }))
@@ -186,14 +117,68 @@ function App() {
     ))
   }, [])
 
-  // 下载时动态生成 ZIP（使用当前的 outputName）
+  // 下载时先转换（如果还没转换），然后打包 ZIP
   const downloadFile = useCallback(async (file: ProcessingFile) => {
-    if (!file.convertedImages || file.convertedImages.length === 0) return
-
     setDownloadingId(file.id)
+
     try {
+      let convertedImages = file.convertedImages
+
+      // If not yet processed, process now with current config
+      if (file.status === 'ready' || !convertedImages || convertedImages.length === 0) {
+        // Update status to processing
+        setFiles(prev => prev.map(f =>
+          f.id === file.id ? { ...f, status: 'processing' as const, progress: 0 } : f
+        ))
+
+        const densities = calculateDensities(config.inputScale)
+        const allDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi', 'drawable'] as const
+        convertedImages = []
+
+        const img = new Image()
+        img.src = file.preview
+
+        await new Promise<void>((resolve, reject) => {
+          img.onload = async () => {
+            try {
+              const selectedDensities = config.selectedDensities
+              const totalSteps = selectedDensities.length
+              let currentStep = 0
+
+              for (const densityName of allDensities) {
+                if (!selectedDensities.includes(densityName)) continue
+
+                const density = densityName === 'drawable' ? densities.mdpi : densities[densityName]
+                const width = Math.round(file.width * density.scale)
+                const height = Math.round(file.height * density.scale)
+                const canvas = resizeImage(img, width, height)
+                const webpBlob = await canvasToWebP(canvas, config.quality, config.lossless)
+
+                const folderName = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
+                convertedImages!.push({ density: folderName, blob: webpBlob })
+
+                currentStep++
+                setFiles(prev => prev.map(f =>
+                  f.id === file.id ? { ...f, progress: Math.round((currentStep / totalSteps) * 100) } : f
+                ))
+              }
+              resolve()
+            } catch (error) {
+              reject(error)
+            }
+          }
+          img.onerror = () => reject(new Error('Failed to load image'))
+        })
+
+        // Update file with converted images
+        setFiles(prev => prev.map(f =>
+          f.id === file.id ? { ...f, status: 'done' as const, progress: 100, convertedImages } : f
+        ))
+      }
+
+      // Now generate and download ZIP
       const zip = new JSZip()
-      for (const img of file.convertedImages) {
+      for (const img of convertedImages!) {
         zip.file(`${img.density}/${file.outputName}.webp`, img.blob)
       }
       const blob = await zip.generateAsync({ type: 'blob' })
@@ -204,28 +189,81 @@ function App() {
       a.download = `${file.outputName}-drawable.zip`
       a.click()
       URL.revokeObjectURL(url)
+    } catch (error) {
+      setFiles(prev => prev.map(f =>
+        f.id === file.id ? { ...f, status: 'error' as const, error: '转换失败' } : f
+      ))
     } finally {
       setDownloadingId(null)
     }
-  }, [])
+  }, [config])
 
   const downloadAll = useCallback(async () => {
-    const doneFiles = files.filter(f => f.status === 'done' && f.convertedImages)
-    if (doneFiles.length === 0) return
+    const readyOrDoneFiles = files.filter(f => f.status === 'ready' || f.status === 'done')
+    if (readyOrDoneFiles.length === 0) return
 
-    if (doneFiles.length === 1) {
-      downloadFile(doneFiles[0])
+    if (readyOrDoneFiles.length === 1) {
+      downloadFile(readyOrDoneFiles[0])
       return
     }
 
     setDownloadingId('all')
     try {
+      // Process all ready files first
+      const densities = calculateDensities(config.inputScale)
+      const allDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi', 'drawable'] as const
+
+      const processedFiles: { file: ProcessingFile; images: ConvertedImage[] }[] = []
+
+      for (const file of readyOrDoneFiles) {
+        let convertedImages = file.convertedImages
+
+        if (file.status === 'ready' || !convertedImages || convertedImages.length === 0) {
+          setFiles(prev => prev.map(f =>
+            f.id === file.id ? { ...f, status: 'processing' as const, progress: 0 } : f
+          ))
+
+          convertedImages = []
+          const img = new Image()
+          img.src = file.preview
+
+          await new Promise<void>((resolve, reject) => {
+            img.onload = async () => {
+              try {
+                const selectedDensities = config.selectedDensities
+                for (const densityName of allDensities) {
+                  if (!selectedDensities.includes(densityName)) continue
+
+                  const density = densityName === 'drawable' ? densities.mdpi : densities[densityName]
+                  const width = Math.round(file.width * density.scale)
+                  const height = Math.round(file.height * density.scale)
+                  const canvas = resizeImage(img, width, height)
+                  const webpBlob = await canvasToWebP(canvas, config.quality, config.lossless)
+
+                  const folderName = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
+                  convertedImages!.push({ density: folderName, blob: webpBlob })
+                }
+                resolve()
+              } catch (error) {
+                reject(error)
+              }
+            }
+            img.onerror = () => reject(new Error('Failed to load image'))
+          })
+
+          setFiles(prev => prev.map(f =>
+            f.id === file.id ? { ...f, status: 'done' as const, progress: 100, convertedImages } : f
+          ))
+        }
+
+        processedFiles.push({ file, images: convertedImages! })
+      }
+
+      // Generate combined ZIP
       const masterZip = new JSZip()
-      for (const file of doneFiles) {
-        if (file.convertedImages) {
-          for (const img of file.convertedImages) {
-            masterZip.file(`${img.density}/${file.outputName}.webp`, img.blob)
-          }
+      for (const { file, images } of processedFiles) {
+        for (const img of images) {
+          masterZip.file(`${img.density}/${file.outputName}.webp`, img.blob)
         }
       }
       const blob = await masterZip.generateAsync({ type: 'blob' })
@@ -238,7 +276,7 @@ function App() {
     } finally {
       setDownloadingId(null)
     }
-  }, [files, downloadFile])
+  }, [files, downloadFile, config])
 
   const clearAll = useCallback(() => {
     files.forEach(file => URL.revokeObjectURL(file.preview))
@@ -516,11 +554,8 @@ function App() {
                           <span>{file.progress}%</span>
                         </div>
                       )}
-                      {file.status === 'pending' && (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>等待...</span>
-                        </div>
+                      {file.status === 'ready' && (
+                        <Badge variant="secondary" className="text-xs">待下载</Badge>
                       )}
                       {file.status === 'done' && downloadingId !== file.id && (
                         <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -529,7 +564,7 @@ function App() {
 
                     {/* Actions */}
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      {file.status === 'done' && file.convertedImages && (
+                      {(file.status === 'ready' || file.status === 'done') && (
                         <Button
                           size="sm"
                           variant="outline"
