@@ -122,59 +122,54 @@ function App() {
     setDownloadingId(file.id)
 
     try {
-      let convertedImages = file.convertedImages
+      // Always process with current config (no caching)
+      setFiles(prev => prev.map(f =>
+        f.id === file.id ? { ...f, status: 'processing' as const, progress: 0 } : f
+      ))
 
-      // If not yet processed, process now with current config
-      if (file.status === 'ready' || !convertedImages || convertedImages.length === 0) {
-        // Update status to processing
-        setFiles(prev => prev.map(f =>
-          f.id === file.id ? { ...f, status: 'processing' as const, progress: 0 } : f
-        ))
+      const densities = calculateDensities(config.inputScale)
+      const allDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi', 'drawable'] as const
+      const convertedImages: ConvertedImage[] = []
 
-        const densities = calculateDensities(config.inputScale)
-        const allDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi', 'drawable'] as const
-        convertedImages = []
+      const img = new Image()
+      img.src = file.preview
 
-        const img = new Image()
-        img.src = file.preview
+      await new Promise<void>((resolve, reject) => {
+        img.onload = async () => {
+          try {
+            const selectedDensities = config.selectedDensities
+            const totalSteps = selectedDensities.length
+            let currentStep = 0
 
-        await new Promise<void>((resolve, reject) => {
-          img.onload = async () => {
-            try {
-              const selectedDensities = config.selectedDensities
-              const totalSteps = selectedDensities.length
-              let currentStep = 0
+            for (const densityName of allDensities) {
+              if (!selectedDensities.includes(densityName)) continue
 
-              for (const densityName of allDensities) {
-                if (!selectedDensities.includes(densityName)) continue
+              const density = densityName === 'drawable' ? densities.mdpi : densities[densityName]
+              const width = Math.round(file.width * density.scale)
+              const height = Math.round(file.height * density.scale)
+              const canvas = resizeImage(img, width, height)
+              const webpBlob = await canvasToWebP(canvas, config.quality, config.lossless)
 
-                const density = densityName === 'drawable' ? densities.mdpi : densities[densityName]
-                const width = Math.round(file.width * density.scale)
-                const height = Math.round(file.height * density.scale)
-                const canvas = resizeImage(img, width, height)
-                const webpBlob = await canvasToWebP(canvas, config.quality, config.lossless)
+              const folderName = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
+              convertedImages.push({ density: folderName, blob: webpBlob })
 
-                const folderName = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
-                convertedImages!.push({ density: folderName, blob: webpBlob })
-
-                currentStep++
-                setFiles(prev => prev.map(f =>
-                  f.id === file.id ? { ...f, progress: Math.round((currentStep / totalSteps) * 100) } : f
-                ))
-              }
-              resolve()
-            } catch (error) {
-              reject(error)
+              currentStep++
+              setFiles(prev => prev.map(f =>
+                f.id === file.id ? { ...f, progress: Math.round((currentStep / totalSteps) * 100) } : f
+              ))
             }
+            resolve()
+          } catch (error) {
+            reject(error)
           }
-          img.onerror = () => reject(new Error('Failed to load image'))
-        })
+        }
+        img.onerror = () => reject(new Error('Failed to load image'))
+      })
 
-        // Update file with converted images
-        setFiles(prev => prev.map(f =>
-          f.id === file.id ? { ...f, status: 'done' as const, progress: 100, convertedImages } : f
-        ))
-      }
+      // Update file status to done
+      setFiles(prev => prev.map(f =>
+        f.id === file.id ? { ...f, status: 'done' as const, progress: 100 } : f
+      ))
 
       // Now generate and download ZIP
       const zip = new JSZip()
@@ -209,54 +204,50 @@ function App() {
 
     setDownloadingId('all')
     try {
-      // Process all ready files first
+      // Always process all files with current config (no caching)
       const densities = calculateDensities(config.inputScale)
       const allDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi', 'drawable'] as const
 
       const processedFiles: { file: ProcessingFile; images: ConvertedImage[] }[] = []
 
       for (const file of readyOrDoneFiles) {
-        let convertedImages = file.convertedImages
+        setFiles(prev => prev.map(f =>
+          f.id === file.id ? { ...f, status: 'processing' as const, progress: 0 } : f
+        ))
 
-        if (file.status === 'ready' || !convertedImages || convertedImages.length === 0) {
-          setFiles(prev => prev.map(f =>
-            f.id === file.id ? { ...f, status: 'processing' as const, progress: 0 } : f
-          ))
+        const convertedImages: ConvertedImage[] = []
+        const img = new Image()
+        img.src = file.preview
 
-          convertedImages = []
-          const img = new Image()
-          img.src = file.preview
+        await new Promise<void>((resolve, reject) => {
+          img.onload = async () => {
+            try {
+              const selectedDensities = config.selectedDensities
+              for (const densityName of allDensities) {
+                if (!selectedDensities.includes(densityName)) continue
 
-          await new Promise<void>((resolve, reject) => {
-            img.onload = async () => {
-              try {
-                const selectedDensities = config.selectedDensities
-                for (const densityName of allDensities) {
-                  if (!selectedDensities.includes(densityName)) continue
+                const density = densityName === 'drawable' ? densities.mdpi : densities[densityName]
+                const width = Math.round(file.width * density.scale)
+                const height = Math.round(file.height * density.scale)
+                const canvas = resizeImage(img, width, height)
+                const webpBlob = await canvasToWebP(canvas, config.quality, config.lossless)
 
-                  const density = densityName === 'drawable' ? densities.mdpi : densities[densityName]
-                  const width = Math.round(file.width * density.scale)
-                  const height = Math.round(file.height * density.scale)
-                  const canvas = resizeImage(img, width, height)
-                  const webpBlob = await canvasToWebP(canvas, config.quality, config.lossless)
-
-                  const folderName = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
-                  convertedImages!.push({ density: folderName, blob: webpBlob })
-                }
-                resolve()
-              } catch (error) {
-                reject(error)
+                const folderName = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
+                convertedImages.push({ density: folderName, blob: webpBlob })
               }
+              resolve()
+            } catch (error) {
+              reject(error)
             }
-            img.onerror = () => reject(new Error('Failed to load image'))
-          })
+          }
+          img.onerror = () => reject(new Error('Failed to load image'))
+        })
 
-          setFiles(prev => prev.map(f =>
-            f.id === file.id ? { ...f, status: 'done' as const, progress: 100, convertedImages } : f
-          ))
-        }
+        setFiles(prev => prev.map(f =>
+          f.id === file.id ? { ...f, status: 'done' as const, progress: 100 } : f
+        ))
 
-        processedFiles.push({ file, images: convertedImages! })
+        processedFiles.push({ file, images: convertedImages })
       }
 
       // Generate combined ZIP
