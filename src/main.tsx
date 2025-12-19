@@ -15,6 +15,8 @@ if (GA_ID) {
   function gtag(...args: unknown[]) {
     window.dataLayer.push(args)
   }
+  // Expose gtag globally for event tracking
+  window.gtag = gtag
   gtag('js', new Date())
   gtag('config', GA_ID)
 }

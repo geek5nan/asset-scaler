@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { ImageFile, ConvertConfig } from '@/types'
 import { saveConfig, loadConfig, getDefaultConfig } from '@/lib/storage'
 import { createImageFile, resizeImage, canvasToWebP, calculateDensities } from '@/lib/imageUtils'
+import { Analytics } from '@/lib/analytics'
 import JSZip from 'jszip'
 
 interface ConvertedImage {
@@ -101,6 +102,10 @@ function App() {
         outputName: f.name.replace(/\.[^.]+$/, '')
       }))
       setFiles(prev => [...prev, ...processingFiles])
+
+      // Track file upload
+      const totalSize = imageFiles.reduce((sum, f) => sum + f.size, 0)
+      Analytics.fileUpload(imageFiles.length, totalSize)
     } catch (error) {
       console.error('Failed to process files:', error)
     }
@@ -191,6 +196,8 @@ function App() {
       }
       return prev.filter(f => f.id !== id)
     })
+    // Track file removal
+    Analytics.removeFile()
   }, [])
 
   const startEditing = useCallback((id: string) => {
@@ -209,6 +216,8 @@ function App() {
     setFiles(prev => prev.map(f =>
       f.id === id ? { ...f, isEditing: false } : f
     ))
+    // Track file rename
+    Analytics.renameFile()
   }, [])
 
   // Process and download file as ZIP
@@ -278,6 +287,9 @@ function App() {
       a.download = `${file.outputName}-drawable.zip`
       a.click()
       URL.revokeObjectURL(url)
+
+      // Track single file download
+      Analytics.downloadAssets(1, 'single')
     } catch (error) {
       setFiles(prev => prev.map(f =>
         f.id === file.id ? { ...f, status: 'error' as const, error: '转换失败' } : f
@@ -358,6 +370,9 @@ function App() {
       a.download = 'drawable-resources.zip'
       a.click()
       URL.revokeObjectURL(url)
+
+      // Track batch download
+      Analytics.downloadAssets(readyFiles.length, 'zip')
     } finally {
       setDownloadingId(null)
     }
@@ -479,7 +494,11 @@ function App() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setShowHelp(true)}
+            onClick={() => {
+              setShowHelp(true)
+              // Track help open
+              Analytics.openHelp()
+            }}
             className="h-8 w-8"
           >
             <HelpCircle className="h-5 w-5" />
@@ -513,11 +532,16 @@ function App() {
                       ? 'bg-primary/5 border-primary'
                       : 'hover:bg-slate-50'
                       }`}
-                    onClick={() => setConfig(prev => ({
-                      ...prev,
-                      inputScale: parseInt(value),
-                      selectedDensities: getRecommendedDensities(parseInt(value))
-                    }))}
+                    onClick={() => {
+                      const newScale = parseInt(value)
+                      setConfig(prev => ({
+                        ...prev,
+                        inputScale: newScale,
+                        selectedDensities: getRecommendedDensities(newScale)
+                      }))
+                      // Track input scale change
+                      Analytics.changeInputScale(newScale)
+                    }}
                   >
                     <RadioGroupItem value={value} id={`r${value}`} className="sr-only" />
                     <span className="font-semibold">{label}</span>
@@ -535,7 +559,12 @@ function App() {
               <Label className="text-sm font-medium mb-3 block">编码模式</Label>
               <RadioGroup
                 value={config.lossless ? 'lossless' : 'lossy'}
-                onValueChange={(value) => setConfig(prev => ({ ...prev, lossless: value === 'lossless' }))}
+                onValueChange={(value) => {
+                  const isLossless = value === 'lossless'
+                  setConfig(prev => ({ ...prev, lossless: isLossless }))
+                  // Track encoding mode change
+                  Analytics.changeEncodingMode(isLossless ? 'lossless' : 'lossy')
+                }}
                 className="space-y-2"
               >
                 <div className="flex items-center space-x-2">
@@ -563,7 +592,10 @@ function App() {
               <div className="flex items-center gap-3">
                 <Slider
                   value={[config.quality]}
-                  onValueChange={([value]) => setConfig(prev => ({ ...prev, quality: value }))}
+                  onValueChange={([value]) => {
+                    setConfig(prev => ({ ...prev, quality: value }))
+                    // Track quality change (debounced in real usage)
+                  }}
                   max={100}
                   min={config.lossless ? 0 : 10}
                   step={1}
@@ -611,6 +643,8 @@ function App() {
                             ? [...prev.selectedDensities, key]
                             : prev.selectedDensities.filter(d => d !== key)
                         }))
+                        // Track density toggle
+                        Analytics.toggleDensity(key, !!checked)
                       }}
                     />
                     <Label htmlFor={`density-${key}`} className="text-sm cursor-pointer flex-1">
