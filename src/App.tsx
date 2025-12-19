@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Sparkles, Upload, Download, Trash2, Loader2, Pencil, Check } from 'lucide-react'
+import { Sparkles, Upload, Download, Trash2, Loader2, Pencil, Check, HelpCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -44,7 +44,30 @@ function App() {
   const [config, setConfig] = useState<ConvertConfig>(getDefaultConfig())
   const [isDragging, setIsDragging] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  // Show help on first visit
+  const [showHelp, setShowHelp] = useState(() => {
+    const hasSeenHelp = localStorage.getItem('asset-scaler-seen-help')
+    return !hasSeenHelp
+  })
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Mark help as seen when closed
+  useEffect(() => {
+    if (!showHelp) {
+      localStorage.setItem('asset-scaler-seen-help', 'true')
+    }
+  }, [showHelp])
+
+  // ESC key to close help modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showHelp) {
+        setShowHelp(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showHelp])
 
   // Load config from localStorage on mount
   useEffect(() => {
@@ -364,13 +387,103 @@ function App() {
           </div>
         </div>
       )}
+      {/* Help Modal */}
+      {showHelp && (
+        <div
+          className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setShowHelp(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">使用说明</h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowHelp(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="p-6 space-y-6 text-sm">
+              <section>
+                <h3 className="font-semibold text-base mb-3">快速开始</h3>
+                <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                  <li><strong>上传图片</strong> - 拖拽 PNG/JPG/WebP 图片到上传区域，或点击选择文件</li>
+                  <li><strong>配置参数</strong> - 在左侧面板设置输入倍数、压缩质量和输出目录</li>
+                  <li><strong>下载资源</strong> - 点击下载按钮获取包含多密度资源的 ZIP 包</li>
+                </ol>
+              </section>
+
+              <section>
+                <h3 className="font-semibold text-base mb-3">输入图片倍数</h3>
+                <p className="text-muted-foreground mb-2">选择您的原始图片对应的密度：</p>
+                <ul className="space-y-1.5 text-muted-foreground">
+                  <li><strong>1x (mdpi)</strong> - 原始 1 倍图，将生成 mdpi 和 hdpi</li>
+                  <li><strong>2x (xhdpi)</strong> - 2 倍图，将生成 mdpi、hdpi、xhdpi</li>
+                  <li><strong>3x (xxhdpi)</strong> - 3 倍图（推荐），将生成 mdpi、hdpi、xhdpi、xxhdpi</li>
+                  <li><strong>4x (xxxhdpi)</strong> - 4 倍高清图，将生成全部 5 种密度</li>
+                </ul>
+              </section>
+
+              <section>
+                <h3 className="font-semibold text-base mb-3">编码模式</h3>
+                <ul className="space-y-1.5 text-muted-foreground">
+                  <li><strong>Lossy (有损压缩)</strong> - 文件体积更小，适合大多数场景</li>
+                  <li><strong>Lossless (无损压缩)</strong> - 保留原始画质，适合需要精确还原的场景</li>
+                </ul>
+              </section>
+
+              <section>
+                <h3 className="font-semibold text-base mb-3">输出目录</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-muted-foreground">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 font-medium">目录</th>
+                        <th className="text-left py-2 font-medium">密度</th>
+                        <th className="text-left py-2 font-medium">说明</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-dashed"><td className="py-1.5">drawable-mdpi</td><td>1x</td><td>中密度 (~160dpi)</td></tr>
+                      <tr className="border-b border-dashed"><td className="py-1.5">drawable-hdpi</td><td>1.5x</td><td>高密度 (~240dpi)</td></tr>
+                      <tr className="border-b border-dashed"><td className="py-1.5">drawable-xhdpi</td><td>2x</td><td>超高密度 (~320dpi)</td></tr>
+                      <tr className="border-b border-dashed"><td className="py-1.5">drawable-xxhdpi</td><td>3x</td><td>超超高密度 (~480dpi)</td></tr>
+                      <tr className="border-b border-dashed"><td className="py-1.5">drawable-xxxhdpi</td><td>4x</td><td>超超超高密度 (~640dpi)</td></tr>
+                      <tr><td className="py-1.5">drawable</td><td>1x</td><td>通用目录</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="font-semibold text-base mb-3">使用技巧</h3>
+                <ul className="space-y-1.5 text-muted-foreground">
+                  <li>🎯 <strong>WebP 转换效果与 Android Studio 一致</strong>，可直接用于项目开发</li>
+                  <li>📌 <strong>建议使用 3x 或 4x 图片</strong> 作为输入，以获得最佳的缩放质量</li>
+                  <li>✏️ <strong>点击文件名旁的编辑图标</strong> 可以修改输出文件名</li>
+                  <li>📦 <strong>多文件统一下载</strong> 会将所有图片合并到同一个 ZIP 包中</li>
+                  <li>💾 <strong>配置自动保存</strong> 到浏览器本地存储，下次使用无需重新设置</li>
+                </ul>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <header className="h-14 border-b bg-white flex-shrink-0">
-        <div className="max-w-[1600px] mx-auto px-6 h-full flex items-center">
+        <div className="max-w-[1600px] mx-auto px-6 h-full flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Sparkles className="h-6 w-6 text-primary" />
             <h1 className="text-xl font-bold">AssetScaler</h1>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowHelp(true)}
+            className="h-8 w-8"
+          >
+            <HelpCircle className="h-5 w-5" />
+          </Button>
         </div>
       </header>
 
@@ -379,8 +492,9 @@ function App() {
         {/* Sidebar */}
         <aside className="w-[280px] border-r bg-white flex-shrink-0 overflow-y-auto">
           <div className="p-6 space-y-6">
-            {/* Input Scale */}
+            {/* Input Section */}
             <div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">输入</h3>
               <Label className="text-sm font-medium mb-3 block">输入图片倍数</Label>
               <RadioGroup
                 value={config.inputScale.toString()}
@@ -413,8 +527,11 @@ function App() {
               </RadioGroup>
             </div>
 
-            {/* Encoding Mode - Match Android Studio */}
+            <div className="h-px bg-border" />
+
+            {/* Output Section */}
             <div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">输出</h3>
               <Label className="text-sm font-medium mb-3 block">编码模式</Label>
               <RadioGroup
                 value={config.lossless ? 'lossless' : 'lossy'}
@@ -437,8 +554,6 @@ function App() {
                 </div>
               </RadioGroup>
             </div>
-
-            <div className="h-px bg-border" />
 
             {/* Quality */}
             <div>
@@ -472,8 +587,6 @@ function App() {
                 </p>
               )}
             </div>
-
-            <div className="h-px bg-border" />
 
             {/* 输出目录选择 */}
             <div>
