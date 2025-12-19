@@ -442,36 +442,30 @@ function App() {
 
             {/* Quality */}
             <div>
-              <div className="flex justify-between items-center mb-3">
-                <Label className="text-sm font-medium">
-                  {config.lossless ? '压缩力度' : 'WebP 质量'}
-                </Label>
-                <Badge variant="secondary">{config.quality}%</Badge>
+              <Label className="text-sm font-medium mb-3 block">
+                {config.lossless ? '压缩力度' : 'WebP 质量'}
+              </Label>
+              <div className="flex items-center gap-3">
+                <Slider
+                  value={[config.quality]}
+                  onValueChange={([value]) => setConfig(prev => ({ ...prev, quality: value }))}
+                  max={100}
+                  min={config.lossless ? 0 : 10}
+                  step={1}
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  value={config.quality}
+                  onChange={(e) => {
+                    const val = Math.min(100, Math.max(config.lossless ? 0 : 10, parseInt(e.target.value) || 0))
+                    setConfig(prev => ({ ...prev, quality: val }))
+                  }}
+                  className="w-16 h-8 text-center text-sm"
+                  min={config.lossless ? 0 : 10}
+                  max={100}
+                />
               </div>
-              {!config.lossless && (
-                <div className="flex gap-2 mb-3">
-                  {[50, 75, 90].map(q => (
-                    <button
-                      key={q}
-                      onClick={() => setConfig(prev => ({ ...prev, quality: q }))}
-                      className={`flex-1 py-1.5 text-xs rounded-md transition-colors ${config.quality === q
-                        ? 'bg-primary text-white'
-                        : 'bg-slate-100 hover:bg-slate-200'
-                        }`}
-                    >
-                      {q === 50 ? '低' : q === 75 ? '中' : '高'}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <Slider
-                value={[config.quality]}
-                onValueChange={([value]) => setConfig(prev => ({ ...prev, quality: value }))}
-                max={100}
-                min={config.lossless ? 0 : 10}
-                step={1}
-                className="w-full"
-              />
               {config.lossless && (
                 <p className="text-xs text-muted-foreground mt-2">
                   0 = 最快压缩，100 = 最小文件
