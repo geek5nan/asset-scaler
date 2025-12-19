@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Sparkles, Upload, Download, Trash2, Loader2, Pencil, Check, HelpCircle, X } from 'lucide-react'
+import { Sparkles, Upload, Download, Trash2, Loader2, Pencil, Check, HelpCircle, X, Image as ImageIcon, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -12,6 +12,7 @@ import { ImageFile, ConvertConfig } from '@/types'
 import { saveConfig, loadConfig, getDefaultConfig } from '@/lib/storage'
 import { createImageFile, resizeImage, canvasToWebP, calculateDensities } from '@/lib/imageUtils'
 import { Analytics } from '@/lib/analytics'
+import { StringResourceProcessor } from '@/components/StringResourceProcessor'
 import JSZip from 'jszip'
 
 interface ConvertedImage {
@@ -45,6 +46,7 @@ function App() {
   const [config, setConfig] = useState<ConvertConfig>(getDefaultConfig())
   const [isDragging, setIsDragging] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'image' | 'string'>('image')
   // Show help on first visit
   const [showHelp, setShowHelp] = useState(() => {
     const hasSeenHelp = localStorage.getItem('asset-scaler-seen-help')
@@ -485,354 +487,383 @@ function App() {
         </div>
       )}
       {/* Header */}
-      <header className="h-14 border-b bg-white flex-shrink-0">
-        <div className="max-w-[1600px] mx-auto px-6 h-full flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-bold">AssetScaler</h1>
+      <header className="border-b bg-white flex-shrink-0">
+        <div className="max-w-[1600px] mx-auto px-6">
+          {/* Top bar */}
+          <div className="h-14 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-6 w-6 text-primary" />
+              <h1 className="text-xl font-bold">AssetScaler</h1>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setShowHelp(true)
+                Analytics.openHelp()
+              }}
+              className="h-8 w-8"
+            >
+              <HelpCircle className="h-5 w-5" />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              setShowHelp(true)
-              // Track help open
-              Analytics.openHelp()
-            }}
-            className="h-8 w-8"
-          >
-            <HelpCircle className="h-5 w-5" />
-          </Button>
+          {/* Tab Navigation */}
+          <div className="flex gap-1 -mb-px">
+            <button
+              onClick={() => setActiveTab('image')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'image'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-slate-300'
+                }`}
+            >
+              <ImageIcon className="h-4 w-4" />
+              图片资源
+            </button>
+            <button
+              onClick={() => setActiveTab('string')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'string'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-slate-300'
+                }`}
+            >
+              <FileText className="h-4 w-4" />
+              字符串资源
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Main Layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-[280px] border-r bg-white flex-shrink-0 overflow-y-auto">
-          <div className="p-6 space-y-6">
-            {/* Input Section */}
-            <div>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">输入</h3>
-              <Label className="text-sm font-medium mb-3 block">输入图片倍数</Label>
-              <RadioGroup
-                value={config.inputScale.toString()}
-                onValueChange={(value) => setConfig(prev => ({ ...prev, inputScale: parseInt(value) }))}
-                className="grid grid-cols-2 gap-2"
-              >
-                {[
-                  { value: '1', label: '1x', desc: 'mdpi' },
-                  { value: '2', label: '2x', desc: 'xhdpi' },
-                  { value: '3', label: '3x', desc: 'xxhdpi' },
-                  { value: '4', label: '4x', desc: 'xxxhdpi' },
-                ].map(({ value, label, desc }) => (
-                  <div
-                    key={value}
-                    className={`flex flex-col items-center p-3 border rounded-lg cursor-pointer transition-colors ${config.inputScale.toString() === value
-                      ? 'bg-primary/5 border-primary'
-                      : 'hover:bg-slate-50'
-                      }`}
-                    onClick={() => {
-                      const newScale = parseInt(value)
-                      setConfig(prev => ({
-                        ...prev,
-                        inputScale: newScale,
-                        selectedDensities: getRecommendedDensities(newScale)
-                      }))
-                      // Track input scale change
-                      Analytics.changeInputScale(newScale)
-                    }}
-                  >
-                    <RadioGroupItem value={value} id={`r${value}`} className="sr-only" />
-                    <span className="font-semibold">{label}</span>
-                    <span className="text-xs text-muted-foreground">{desc}</span>
-                  </div>
-                ))}
-              </RadioGroup>
-            </div>
-
-            <div className="h-px bg-border" />
-
-            {/* Output Section */}
-            <div>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">输出</h3>
-              <Label className="text-sm font-medium mb-3 block">编码模式</Label>
-              <RadioGroup
-                value={config.lossless ? 'lossless' : 'lossy'}
-                onValueChange={(value) => {
-                  const isLossless = value === 'lossless'
-                  setConfig(prev => ({ ...prev, lossless: isLossless }))
-                  // Track encoding mode change
-                  Analytics.changeEncodingMode(isLossless ? 'lossless' : 'lossy')
-                }}
-                className="space-y-2"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="lossy" id="lossy" />
-                  <Label htmlFor="lossy" className="text-sm cursor-pointer">
-                    Lossy (有损压缩)
-                    <span className="text-xs text-muted-foreground ml-2">文件更小</span>
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="lossless" id="lossless" />
-                  <Label htmlFor="lossless" className="text-sm cursor-pointer">
-                    Lossless (无损压缩)
-                    <span className="text-xs text-muted-foreground ml-2">保留原始质量</span>
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {/* Quality */}
-            <div>
-              <Label className="text-sm font-medium mb-3 block">
-                {config.lossless ? '压缩力度' : 'WebP 质量'}
-              </Label>
-              <div className="flex items-center gap-3">
-                <Slider
-                  value={[config.quality]}
-                  onValueChange={([value]) => {
-                    setConfig(prev => ({ ...prev, quality: value }))
-                    // Track quality change (debounced in real usage)
-                  }}
-                  max={100}
-                  min={config.lossless ? 0 : 10}
-                  step={1}
-                  className="flex-1"
-                />
-                <Input
-                  type="number"
-                  value={config.quality}
-                  onChange={(e) => {
-                    const val = Math.min(100, Math.max(config.lossless ? 0 : 10, parseInt(e.target.value) || 0))
-                    setConfig(prev => ({ ...prev, quality: val }))
-                  }}
-                  className="w-16 h-8 text-center text-sm"
-                  min={config.lossless ? 0 : 10}
-                  max={100}
-                />
-              </div>
-              {config.lossless && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  0 = 最快压缩，100 = 最小文件
-                </p>
-              )}
-            </div>
-
-            {/* 输出目录选择 */}
-            <div>
-              <Label className="text-sm font-medium mb-3 block">输出目录</Label>
-              <div className="space-y-2">
-                {[
-                  { key: 'mdpi', label: 'drawable-mdpi', desc: '1x' },
-                  { key: 'hdpi', label: 'drawable-hdpi', desc: '1.5x' },
-                  { key: 'xhdpi', label: 'drawable-xhdpi', desc: '2x' },
-                  { key: 'xxhdpi', label: 'drawable-xxhdpi', desc: '3x' },
-                  { key: 'xxxhdpi', label: 'drawable-xxxhdpi', desc: '4x' },
-                  { key: 'drawable', label: 'drawable', desc: '通用' },
-                ].map(({ key, label, desc }) => (
-                  <div key={key} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`density-${key}`}
-                      checked={config.selectedDensities.includes(key)}
-                      onCheckedChange={(checked) => {
+      {activeTab === 'image' ? (
+        <div className="flex flex-1 overflow-hidden">
+          {/* Sidebar */}
+          <aside className="w-[280px] border-r bg-white flex-shrink-0 overflow-y-auto">
+            <div className="p-6 space-y-6">
+              {/* Input Section */}
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">输入</h3>
+                <Label className="text-sm font-medium mb-3 block">输入图片倍数</Label>
+                <RadioGroup
+                  value={config.inputScale.toString()}
+                  onValueChange={(value) => setConfig(prev => ({ ...prev, inputScale: parseInt(value) }))}
+                  className="grid grid-cols-2 gap-2"
+                >
+                  {[
+                    { value: '1', label: '1x', desc: 'mdpi' },
+                    { value: '2', label: '2x', desc: 'xhdpi' },
+                    { value: '3', label: '3x', desc: 'xxhdpi' },
+                    { value: '4', label: '4x', desc: 'xxxhdpi' },
+                  ].map(({ value, label, desc }) => (
+                    <div
+                      key={value}
+                      className={`flex flex-col items-center p-3 border rounded-lg cursor-pointer transition-colors ${config.inputScale.toString() === value
+                        ? 'bg-primary/5 border-primary'
+                        : 'hover:bg-slate-50'
+                        }`}
+                      onClick={() => {
+                        const newScale = parseInt(value)
                         setConfig(prev => ({
                           ...prev,
-                          selectedDensities: checked
-                            ? [...prev.selectedDensities, key]
-                            : prev.selectedDensities.filter(d => d !== key)
+                          inputScale: newScale,
+                          selectedDensities: getRecommendedDensities(newScale)
                         }))
-                        // Track density toggle
-                        Analytics.toggleDensity(key, !!checked)
+                        // Track input scale change
+                        Analytics.changeInputScale(newScale)
                       }}
-                    />
-                    <Label htmlFor={`density-${key}`} className="text-sm cursor-pointer flex-1">
-                      {label}
-                      <span className="text-xs text-muted-foreground ml-2">({desc})</span>
+                    >
+                      <RadioGroupItem value={value} id={`r${value}`} className="sr-only" />
+                      <span className="font-semibold">{label}</span>
+                      <span className="text-xs text-muted-foreground">{desc}</span>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </div>
+
+              <div className="h-px bg-border" />
+
+              {/* Output Section */}
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">输出</h3>
+                <Label className="text-sm font-medium mb-3 block">编码模式</Label>
+                <RadioGroup
+                  value={config.lossless ? 'lossless' : 'lossy'}
+                  onValueChange={(value) => {
+                    const isLossless = value === 'lossless'
+                    setConfig(prev => ({ ...prev, lossless: isLossless }))
+                    // Track encoding mode change
+                    Analytics.changeEncodingMode(isLossless ? 'lossless' : 'lossy')
+                  }}
+                  className="space-y-2"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="lossy" id="lossy" />
+                    <Label htmlFor="lossy" className="text-sm cursor-pointer">
+                      Lossy (有损压缩)
+                      <span className="text-xs text-muted-foreground ml-2">文件更小</span>
                     </Label>
                   </div>
-                ))}
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="lossless" id="lossless" />
+                    <Label htmlFor="lossless" className="text-sm cursor-pointer">
+                      Lossless (无损压缩)
+                      <span className="text-xs text-muted-foreground ml-2">保留原始质量</span>
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {/* Quality */}
+              <div>
+                <Label className="text-sm font-medium mb-3 block">
+                  {config.lossless ? '压缩力度' : 'WebP 质量'}
+                </Label>
+                <div className="flex items-center gap-3">
+                  <Slider
+                    value={[config.quality]}
+                    onValueChange={([value]) => {
+                      setConfig(prev => ({ ...prev, quality: value }))
+                      // Track quality change (debounced in real usage)
+                    }}
+                    max={100}
+                    min={config.lossless ? 0 : 10}
+                    step={1}
+                    className="flex-1"
+                  />
+                  <Input
+                    type="number"
+                    value={config.quality}
+                    onChange={(e) => {
+                      const val = Math.min(100, Math.max(config.lossless ? 0 : 10, parseInt(e.target.value) || 0))
+                      setConfig(prev => ({ ...prev, quality: val }))
+                    }}
+                    className="w-16 h-8 text-center text-sm"
+                    min={config.lossless ? 0 : 10}
+                    max={100}
+                  />
+                </div>
+                {config.lossless && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    0 = 最快压缩，100 = 最小文件
+                  </p>
+                )}
+              </div>
+
+              {/* 输出目录选择 */}
+              <div>
+                <Label className="text-sm font-medium mb-3 block">输出目录</Label>
+                <div className="space-y-2">
+                  {[
+                    { key: 'mdpi', label: 'drawable-mdpi', desc: '1x' },
+                    { key: 'hdpi', label: 'drawable-hdpi', desc: '1.5x' },
+                    { key: 'xhdpi', label: 'drawable-xhdpi', desc: '2x' },
+                    { key: 'xxhdpi', label: 'drawable-xxhdpi', desc: '3x' },
+                    { key: 'xxxhdpi', label: 'drawable-xxxhdpi', desc: '4x' },
+                    { key: 'drawable', label: 'drawable', desc: '通用' },
+                  ].map(({ key, label, desc }) => (
+                    <div key={key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`density-${key}`}
+                        checked={config.selectedDensities.includes(key)}
+                        onCheckedChange={(checked) => {
+                          setConfig(prev => ({
+                            ...prev,
+                            selectedDensities: checked
+                              ? [...prev.selectedDensities, key]
+                              : prev.selectedDensities.filter(d => d !== key)
+                          }))
+                          // Track density toggle
+                          Analytics.toggleDensity(key, !!checked)
+                        }}
+                      />
+                      <Label htmlFor={`density-${key}`} className="text-sm cursor-pointer flex-1">
+                        {label}
+                        <span className="text-xs text-muted-foreground ml-2">({desc})</span>
+                      </Label>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        </aside>
+          </aside>
 
-        {/* Main Content */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          {/* Upload Area */}
-          <div className="p-6 flex-shrink-0">
-            <div
-              className={`
+          {/* Main Content */}
+          <main className="flex-1 flex flex-col overflow-hidden">
+            {/* Upload Area */}
+            <div className="p-6 flex-shrink-0">
+              <div
+                className={`
                 border-2 border-dashed rounded-xl p-8 text-center cursor-pointer
                 transition-all duration-200
                 ${isDragging
-                  ? 'border-primary bg-primary/5'
-                  : 'border-slate-300 hover:border-primary/50 hover:bg-slate-50'
-                }
+                    ? 'border-primary bg-primary/5'
+                    : 'border-slate-300 hover:border-primary/50 hover:bg-slate-50'
+                  }
               `}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload className={`h-10 w-10 mx-auto mb-3 transition-colors ${isDragging ? 'text-primary' : 'text-slate-400'}`} />
-              <h2 className="text-lg font-semibold mb-1">
-                {isDragging ? '松开鼠标上传' : '拖拽图片到这里'}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                支持 PNG、JPG、WebP 格式
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/png,image/jpeg,image/jpg,image/webp"
-                className="hidden"
-                onChange={(e) => handleFileSelect(e.target.files)}
-              />
-            </div>
-          </div>
-
-          {/* File List */}
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            {files.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-muted-foreground">
-                <p className="text-sm">暂无文件，请上传图片</p>
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className={`h-10 w-10 mx-auto mb-3 transition-colors ${isDragging ? 'text-primary' : 'text-slate-400'}`} />
+                <h2 className="text-lg font-semibold mb-1">
+                  {isDragging ? '松开鼠标上传' : '拖拽图片到这里'}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  支持 PNG、JPG、WebP 格式
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
+                  className="hidden"
+                  onChange={(e) => handleFileSelect(e.target.files)}
+                />
               </div>
-            ) : (
-              <div className="space-y-2">
-                {files.map((file) => (
-                  <div
-                    key={file.id}
-                    className="flex items-center gap-4 p-3 bg-white rounded-lg border"
-                  >
-                    {/* Thumbnail */}
-                    <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center">
-                      <img
-                        src={file.preview}
-                        alt={file.name}
-                        className="max-w-full max-h-full object-contain"
-                      />
-                    </div>
+            </div>
 
-                    {/* Info & Progress */}
-                    <div className="flex-1 min-w-0">
-                      {/* Editable filename */}
-                      {file.isEditing ? (
-                        <div className="flex items-center gap-2 mb-1">
-                          <Input
-                            value={file.outputName}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateOutputName(file.id, e.target.value)}
-                            className="h-7 text-sm"
-                            autoFocus
-                            onBlur={() => finishEditing(file.id)}
-                            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-                              if (e.key === 'Enter') finishEditing(file.id)
-                              if (e.key === 'Escape') finishEditing(file.id)
-                            }}
-                          />
+            {/* File List */}
+            <div className="flex-1 overflow-y-auto px-6 pb-6">
+              {files.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  <p className="text-sm">暂无文件，请上传图片</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {files.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center gap-4 p-3 bg-white rounded-lg border"
+                    >
+                      {/* Thumbnail */}
+                      <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 flex items-center justify-center">
+                        <img
+                          src={file.preview}
+                          alt={file.name}
+                          className="max-w-full max-h-full object-contain"
+                        />
+                      </div>
+
+                      {/* Info & Progress */}
+                      <div className="flex-1 min-w-0">
+                        {/* Editable filename */}
+                        {file.isEditing ? (
+                          <div className="flex items-center gap-2 mb-1">
+                            <Input
+                              value={file.outputName}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateOutputName(file.id, e.target.value)}
+                              className="h-7 text-sm"
+                              autoFocus
+                              onBlur={() => finishEditing(file.id)}
+                              onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                                if (e.key === 'Enter') finishEditing(file.id)
+                                if (e.key === 'Escape') finishEditing(file.id)
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              onClick={() => finishEditing(file.id)}
+                            >
+                              <Check className="h-4 w-4 text-green-600" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-sm font-medium truncate">{file.outputName}.webp</p>
+                            {file.status === 'ready' && (
+                              <button
+                                onClick={() => startEditing(file.id)}
+                                className="text-muted-foreground hover:text-foreground"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {file.width} × {file.height} · {(file.size / 1024).toFixed(1)} KB
+                        </p>
+                        {file.status === 'processing' && (
+                          <Progress value={file.progress} className="h-1 mt-1.5" />
+                        )}
+                      </div>
+
+                      {/* Status */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {file.status === 'processing' && (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>{file.progress}%</span>
+                          </div>
+                        )}
+                        {file.status === 'ready' && downloadingId !== file.id && (
+                          <Badge variant="secondary" className="text-xs">待下载</Badge>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {file.status === 'ready' && (
                           <Button
                             size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            onClick={() => finishEditing(file.id)}
+                            variant="outline"
+                            onClick={() => downloadFile(file)}
+                            disabled={downloadingId === file.id}
+                            className="h-8"
                           >
-                            <Check className="h-4 w-4 text-green-600" />
+                            {downloadingId === file.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4" />
+                            )}
                           </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="text-sm font-medium truncate">{file.outputName}.webp</p>
-                          {file.status === 'ready' && (
-                            <button
-                              onClick={() => startEditing(file.id)}
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        {file.width} × {file.height} · {(file.size / 1024).toFixed(1)} KB
-                      </p>
-                      {file.status === 'processing' && (
-                        <Progress value={file.progress} className="h-1 mt-1.5" />
-                      )}
-                    </div>
-
-                    {/* Status */}
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {file.status === 'processing' && (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>{file.progress}%</span>
-                        </div>
-                      )}
-                      {file.status === 'ready' && downloadingId !== file.id && (
-                        <Badge variant="secondary" className="text-xs">待下载</Badge>
-                      )}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {file.status === 'ready' && (
+                        )}
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => downloadFile(file)}
-                          disabled={downloadingId === file.id}
-                          className="h-8"
+                          variant="ghost"
+                          onClick={() => removeFile(file.id)}
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
                         >
-                          {downloadingId === file.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Download className="h-4 w-4" />
-                          )}
+                          <Trash2 className="h-4 w-4" />
                         </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeFile(file.id)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Bar */}
+            {files.length > 0 && (
+              <div className="flex-shrink-0 border-t bg-white px-6 py-3 flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {processingCount > 0 && `${processingCount} 个处理中 · `}
+                  {readyCount > 0 && `${readyCount} 个待下载`}
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={clearAll}>
+                    清空全部
+                  </Button>
+                  {readyCount > 0 && (
+                    <Button size="sm" onClick={downloadAll} disabled={downloadingId === 'all'}>
+                      {downloadingId === 'all' ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-1" />
+                      )}
+                      全部下载
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
-          </div>
-
-          {/* Bottom Bar */}
-          {files.length > 0 && (
-            <div className="flex-shrink-0 border-t bg-white px-6 py-3 flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {processingCount > 0 && `${processingCount} 个处理中 · `}
-                {readyCount > 0 && `${readyCount} 个待下载`}
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={clearAll}>
-                  清空全部
-                </Button>
-                {readyCount > 0 && (
-                  <Button size="sm" onClick={downloadAll} disabled={downloadingId === 'all'}>
-                    {downloadingId === 'all' ? (
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4 mr-1" />
-                    )}
-                    全部下载
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </main>
-      </div>
+          </main>
+        </div>
+      ) : (
+        <StringResourceProcessor />
+      )}
     </div>
   )
 }
