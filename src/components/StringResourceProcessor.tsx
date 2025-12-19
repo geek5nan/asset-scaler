@@ -72,7 +72,7 @@ export function StringResourceProcessor() {
     // Select source directory (non-standard structure)
     const selectSourceDir = useCallback(async () => {
         try {
-            const handle = await window.showDirectoryPicker({ mode: 'read' })
+            const handle = await window.showDirectoryPicker({ mode: 'read', id: 'string-source-dir' })
             setSourceDirHandle(handle)
             setStatus('scanning')
             setError(null)
@@ -111,7 +111,7 @@ export function StringResourceProcessor() {
     // Select target directory (standard Android res structure)
     const selectTargetDir = useCallback(async () => {
         try {
-            const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
+            const handle = await window.showDirectoryPicker({ mode: 'readwrite', id: 'string-target-dir' })
             setTargetDirHandle(handle)
             setStatus('scanning')
             setError(null)

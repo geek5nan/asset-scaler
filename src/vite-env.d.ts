@@ -15,6 +15,7 @@ declare global {
         showDirectoryPicker(options?: {
             mode?: 'read' | 'readwrite'
             startIn?: 'desktop' | 'documents' | 'downloads' | 'music' | 'pictures' | 'videos'
+            id?: string
         }): Promise<FileSystemDirectoryHandle>
     }
 
