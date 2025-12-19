@@ -14,8 +14,8 @@ function Navigation() {
       <Link
         to="/drawable"
         className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${location.pathname === '/drawable'
-            ? 'border-primary text-primary'
-            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-slate-300'
+          ? 'border-primary text-primary'
+          : 'border-transparent text-muted-foreground hover:text-foreground hover:border-slate-300'
           }`}
       >
         <ImageIcon className="h-4 w-4" />
@@ -24,8 +24,8 @@ function Navigation() {
       <Link
         to="/string"
         className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${location.pathname === '/string'
-            ? 'border-primary text-primary'
-            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-slate-300'
+          ? 'border-primary text-primary'
+          : 'border-transparent text-muted-foreground hover:text-foreground hover:border-slate-300'
           }`}
       >
         <FileText className="h-4 w-4" />
@@ -38,14 +38,14 @@ function Navigation() {
 function App() {
   // Show help on first visit
   const [showHelp, setShowHelp] = useState(() => {
-    const hasSeenHelp = localStorage.getItem('asset-scaler-seen-help')
+    const hasSeenHelp = localStorage.getItem('resbeaver-seen-help')
     return !hasSeenHelp
   })
 
   // Mark help as seen when closed
   useEffect(() => {
     if (!showHelp) {
-      localStorage.setItem('asset-scaler-seen-help', 'true')
+      localStorage.setItem('resbeaver-seen-help', 'true')
     }
   }, [showHelp])
 
@@ -129,7 +129,7 @@ function App() {
             <div className="h-14 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Sparkles className="h-6 w-6 text-primary" />
-                <h1 className="text-xl font-bold">AssetScaler</h1>
+                <h1 className="text-xl font-bold">ResBeaver</h1>
               </div>
               <Button
                 variant="ghost"

@@ -1,6 +1,6 @@
 import { ConvertConfig } from '@/types'
 
-const STORAGE_KEY = 'asset-scaler-config'
+const STORAGE_KEY = 'resbeaver-config'
 
 export function saveConfig(config: ConvertConfig) {
   try {

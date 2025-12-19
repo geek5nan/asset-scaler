@@ -5,7 +5,7 @@
 
 import { LocaleMapping, LocaleMappingConfig } from '@/types'
 
-const STORAGE_KEY = 'asset-scaler-locale-mapping'
+const STORAGE_KEY = 'resbeaver-locale-mapping'
 
 /**
  * Guess locale code from filename

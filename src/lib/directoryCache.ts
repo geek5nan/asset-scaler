@@ -3,7 +3,7 @@
  * Allows caching FileSystemDirectoryHandle to reduce repeated permission prompts
  */
 
-const DB_NAME = 'asset-scaler-db'
+const DB_NAME = 'resbeaver-db'
 const DB_VERSION = 1
 const STORE_NAME = 'directoryHandles'
 
