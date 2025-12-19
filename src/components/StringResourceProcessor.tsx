@@ -4,13 +4,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
-import { LocaleResources, MergePreview, SourceXmlFile, LocaleMapping, LocaleMappingConfig } from '@/types'
 import {
     scanStringsFromDirectory,
     scanAllXmlFiles,
     generateMergePreview,
     executeMerge,
-    applyMappingToSources
+    applyMappingToSources,
+    findAndroidResourceDirectories
 } from '@/lib/xmlUtils'
 import {
     saveMappingConfig,
@@ -18,6 +18,14 @@ import {
     exportMappingConfig,
     parseImportedConfig
 } from '@/lib/localeMapping'
+import {
+    LocaleResources,
+    MergePreview,
+    SourceXmlFile,
+    LocaleMapping,
+    LocaleMappingConfig,
+    AndroidResourceDir
+} from '@/types'
 
 type OperationStatus = 'idle' | 'scanning' | 'ready' | 'merging' | 'success' | 'error'
 
@@ -38,6 +46,11 @@ export function StringResourceProcessor() {
     const [status, setStatus] = useState<OperationStatus>('idle')
     const [error, setError] = useState<string | null>(null)
     const [showMappingConfig, setShowMappingConfig] = useState(false)
+
+    // Android project res folders
+    const [projectRootName, setProjectRootName] = useState<string | null>(null)
+    const [discoveredResDirs, setDiscoveredResDirs] = useState<AndroidResourceDir[]>([])
+    const [selectedResDir, setSelectedResDir] = useState<AndroidResourceDir | null>(null)
 
     // Import comment
     const [importComment, setImportComment] = useState<string>(
@@ -108,33 +121,55 @@ export function StringResourceProcessor() {
         }
     }, [targetResources])
 
-    // Select target directory (standard Android res structure)
+    // Load a specific res directory and scan strings
+    const loadResDirectory = useCallback(async (resDir: AndroidResourceDir) => {
+        setSelectedResDir(resDir)
+        setTargetDirHandle(resDir.handle)
+        setStatus('scanning')
+        try {
+            const resources = await scanStringsFromDirectory(resDir.handle)
+            setTargetResources(resources)
+            setStatus('ready')
+        } catch (err) {
+            setError('读取目标资源失败')
+            setStatus('error')
+        }
+    }, [])
+
+    // Select target directory (support root project selection)
     const selectTargetDir = useCallback(async () => {
         try {
-            const handle = await window.showDirectoryPicker({ mode: 'readwrite', id: 'string-target-dir' })
-            setTargetDirHandle(handle)
+            const rootHandle = await window.showDirectoryPicker({ mode: 'readwrite', id: 'string-target-dir' })
+            setProjectRootName(rootHandle.name)
             setStatus('scanning')
             setError(null)
 
-            const resources = await scanStringsFromDirectory(handle)
-            setTargetResources(resources)
+            const resDirs = await findAndroidResourceDirectories(rootHandle)
+            setDiscoveredResDirs(resDirs)
 
-            // Update preview if source is already selected
-            if (sourceFiles.length > 0 && mappings.length > 0) {
-                const sourceResources = applyMappingToSources(sourceFiles, mappings)
-                const preview = generateMergePreview(sourceResources, resources)
-                setMergePreview(preview)
-                setStatus('ready')
+            if (resDirs.length === 0) {
+                setError('未在所选目录中找到 Android 资源目录 (src/main/res)')
+                setStatus('error')
+            } else if (resDirs.length === 1) {
+                // One found, auto-select
+                await loadResDirectory(resDirs[0])
             } else {
-                setStatus('idle')
+                // Multiple found, look for 'app' module
+                const appModule = resDirs.find(d => d.name.toLowerCase() === 'app')
+                if (appModule) {
+                    await loadResDirectory(appModule)
+                } else {
+                    // Let user select manually
+                    setStatus('idle')
+                }
             }
         } catch (err) {
             if ((err as Error).name !== 'AbortError') {
-                setError('选择目录失败')
+                setError('选择项目失败')
                 setStatus('error')
             }
         }
-    }, [sourceFiles, mappings])
+    }, [loadResDirectory])
 
     // Update a single mapping
     const updateMapping = useCallback((index: number, updates: Partial<LocaleMapping>) => {
@@ -267,7 +302,7 @@ export function StringResourceProcessor() {
                     {/* Source Directory */}
                     <div className="bg-white rounded-lg border p-4">
                         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                            ① 源字符串资源
+                            ① 文字目录
                         </h3>
                         <Button
                             variant="outline"
@@ -322,7 +357,7 @@ export function StringResourceProcessor() {
                     {/* Target Directory */}
                     <div className="bg-white rounded-lg border p-4">
                         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                            ② 目标项目 res 目录
+                            ② 项目目录
                         </h3>
                         <Button
                             variant="outline"
@@ -330,8 +365,32 @@ export function StringResourceProcessor() {
                             onClick={selectTargetDir}
                         >
                             <FolderOpen className="h-5 w-5" />
-                            {targetDirHandle ? targetDirHandle.name : '选择项目 res 文件夹'}
+                            {projectRootName || '选择 Android 项目'}
                         </Button>
+
+                        {discoveredResDirs.length > 1 && (
+                            <div className="mt-3 pt-3 border-t">
+                                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                                    检测到多个资源模块:
+                                </label>
+                                <div className="flex flex-wrap gap-2">
+                                    {discoveredResDirs.map(dir => {
+                                        const isSelected = selectedResDir?.path === dir.path
+                                        return (
+                                            <Button
+                                                key={dir.path}
+                                                variant={isSelected ? "default" : "outline"}
+                                                size="sm"
+                                                className="h-8 text-xs px-3"
+                                                onClick={() => loadResDirectory(dir)}
+                                            >
+                                                {dir.name}
+                                            </Button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )}
 
                         {targetResources.length > 0 && (
                             <div className="mt-3 space-y-2">

@@ -50,6 +50,12 @@ export interface MergePreview {
   overwriteCount: number
   isNewFile: boolean
 }
+// Discovered Android resource directory info
+export interface AndroidResourceDir {
+  name: string                 // e.g., 'app' or 'lib'
+  path: string                 // e.g., 'app/src/main/res'
+  handle: FileSystemDirectoryHandle
+}
 
 // Single file to locale mapping rule
 export interface LocaleMapping {

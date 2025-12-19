@@ -3,13 +3,87 @@
  * Enhanced with File System Access API support
  */
 
-import { LocaleResources, MergePreview, SourceXmlFile, LocaleMapping } from '@/types'
+import { LocaleResources, MergePreview, SourceXmlFile, LocaleMapping, AndroidResourceDir } from '@/types'
 import { guessLocaleFromFileName } from './localeMapping'
 
 export interface ParseResult {
     success: boolean
     entries: Map<string, string>
     error?: string
+}
+
+/**
+ * Scan a directory recursively to find Android res directories (src/main/res)
+ */
+export async function findAndroidResourceDirectories(
+    dirHandle: FileSystemDirectoryHandle,
+    currentPath: string = '',
+    depth: number = 0
+): Promise<AndroidResourceDir[]> {
+    const results: AndroidResourceDir[] = []
+    const MAX_DEPTH = 5 // Avoid deep recursion
+
+    if (depth > MAX_DEPTH) return []
+
+    if (currentPath.endsWith('/res') || (currentPath === '' && await isResDirectory(dirHandle))) {
+        const moduleName = currentPath ? currentPath.split('/')[0] : dirHandle.name
+        results.push({
+            name: moduleName,
+            path: currentPath || '.',
+            handle: dirHandle
+        })
+        return results
+    }
+
+    for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'directory') {
+            const nextPath = currentPath ? `${currentPath}/${entry.name}` : entry.name
+
+            // Optimization: ignore common non-project directories
+            if (['.git', '.gradle', '.idea', 'build', 'node_modules'].includes(entry.name)) continue
+
+            const nextHandle = await dirHandle.getDirectoryHandle(entry.name)
+
+            // Check for src/main/res pattern
+            if (entry.name === 'src') {
+                try {
+                    const mainHandle = await nextHandle.getDirectoryHandle('main')
+                    const resHandle = await mainHandle.getDirectoryHandle('res')
+                    const moduleName = currentPath || dirHandle.name
+                    results.push({
+                        name: moduleName,
+                        path: `${nextPath}/main/res`,
+                        handle: resHandle
+                    })
+                    continue // Found it, no need to go deeper in this branch
+                } catch {
+                    // Not a src/main/res path
+                }
+            }
+
+            // Recursive search
+            const subResults = await findAndroidResourceDirectories(nextHandle, nextPath, depth + 1)
+            results.push(...subResults)
+        }
+    }
+
+    return results
+}
+
+/**
+ * Helper to check if a directory looks like an Android res directory
+ */
+async function isResDirectory(dirHandle: FileSystemDirectoryHandle): Promise<boolean> {
+    try {
+        for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'directory' && entry.name.startsWith('values')) {
+                return true
+            }
+        }
+    } catch {
+        // Ignore errors
+    }
+    return false
 }
 
 /**
