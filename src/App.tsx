@@ -31,7 +31,7 @@ interface ProcessingFile extends ImageFile {
 // Get recommended output densities based on input scale
 function getRecommendedDensities(inputScale: number): string[] {
   switch (inputScale) {
-    case 1: return ['mdpi', 'hdpi']
+    case 1: return ['mdpi']
     case 2: return ['mdpi', 'hdpi', 'xhdpi']
     case 3: return ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
     case 4: return ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']
@@ -417,7 +417,7 @@ function App() {
                 <h3 className="font-semibold text-base mb-3">输入图片倍数</h3>
                 <p className="text-muted-foreground mb-2">选择您的原始图片对应的密度：</p>
                 <ul className="space-y-1.5 text-muted-foreground">
-                  <li><strong>1x (mdpi)</strong> - 原始 1 倍图，将生成 mdpi 和 hdpi</li>
+                  <li><strong>1x (mdpi)</strong> - 原始 1 倍图，将生成 mdpi</li>
                   <li><strong>2x (xhdpi)</strong> - 2 倍图，将生成 mdpi、hdpi、xhdpi</li>
                   <li><strong>3x (xxhdpi)</strong> - 3 倍图（推荐），将生成 mdpi、hdpi、xhdpi、xxhdpi</li>
                   <li><strong>4x (xxxhdpi)</strong> - 4 倍高清图，将生成全部 5 种密度</li>

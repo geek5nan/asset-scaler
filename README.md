@@ -16,7 +16,7 @@ Multi-density asset generator for Android.
 
 #### 输入图片倍数
 选择您的原始图片对应的密度：
-- **1x (mdpi)** - 原始 1 倍图，将生成 mdpi 和 hdpi
+- **1x (mdpi)** - 原始 1 倍图，将生成 mdpi
 - **2x (xhdpi)** - 2 倍图，将生成 mdpi、hdpi、xhdpi
 - **3x (xxhdpi)** - 3 倍图（推荐），将生成 mdpi、hdpi、xhdpi、xxhdpi
 - **4x (xxxhdpi)** - 4 倍高清图，将生成全部 5 种密度
