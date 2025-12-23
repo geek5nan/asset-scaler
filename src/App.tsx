@@ -35,6 +35,16 @@ function Navigation() {
   )
 }
 
+function PageTracker() {
+  const location = useLocation()
+
+  useEffect(() => {
+    Analytics.pageView(location.pathname + location.search)
+  }, [location])
+
+  return null
+}
+
 function App() {
   // Show help on first visit
   const [showHelp, setShowHelp] = useState(() => {
@@ -63,6 +73,7 @@ function App() {
 
   return (
     <Router>
+      <PageTracker />
       <div className="h-screen flex flex-col overflow-hidden bg-slate-50 relative">
         {/* Help Modal */}
         {showHelp && (
