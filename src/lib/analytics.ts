@@ -122,4 +122,14 @@ export const Analytics = {
     /** User navigated diff changes */
     stringNavigateDiff: (direction: 'prev' | 'next') =>
         trackEvent('string_navigate_diff', { direction }),
+
+    /** Track page view */
+    pageView: (path: string) => {
+        const GA_ID = import.meta.env.VITE_GA_ID
+        if (typeof window !== 'undefined' && window.gtag && GA_ID) {
+            window.gtag('config', GA_ID, {
+                page_path: path,
+            })
+        }
+    },
 }
