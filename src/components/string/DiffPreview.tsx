@@ -1,8 +1,17 @@
-import { useRef, useEffect, forwardRef } from 'react'
+import { useRef, useEffect, forwardRef, useState } from 'react'
+import { ChevronUp, ChevronDown } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { MergePreviewDetail, XmlDiffLine } from '@/types'
 
 interface DiffPreviewProps {
     preview: MergePreviewDetail | null
+    projectRootName: string | null
+    resPath: string | null
+    activeLineIndex?: number | null
+    onNavigatePrev?: () => void
+    onNavigateNext?: () => void
+    hasPrev?: boolean
+    hasNext?: boolean
 }
 
 // Syntax highlight XML content
@@ -50,23 +59,43 @@ function highlightXml(content: string, baseColor: string): React.ReactNode {
     return <span className={baseColor}>{content}</span>
 }
 
-export function DiffPreview({ preview }: DiffPreviewProps) {
+export function DiffPreview({
+    preview,
+    projectRootName,
+    resPath,
+    activeLineIndex,
+    onNavigatePrev,
+    onNavigateNext,
+    hasPrev = false,
+    hasNext = false
+}: DiffPreviewProps) {
     const containerRef = useRef<HTMLDivElement>(null)
-    const firstChangeRef = useRef<HTMLDivElement>(null)
+    const lineRefs = useRef<(HTMLDivElement | null)[]>([])
+    const [showFullPath, setShowFullPath] = useState(false)
 
-    // Scroll to first change with some context (show 5 lines before)
+    // Calculate basic data early so it's available to effects
+    const diffLines = preview?.diffLines || []
+    const hasChanges = (preview?.addCount || 0) > 0 || (preview?.overwriteCount || 0) > 0
+
+    // Scroll to active line or first change
     useEffect(() => {
-        if (firstChangeRef.current && containerRef.current) {
+        if (!preview) return
+
+        const targetIndex = activeLineIndex !== null && activeLineIndex !== undefined
+            ? activeLineIndex
+            : diffLines.findIndex(line => line.type === 'add' || line.type === 'update-old' || line.type === 'update-new')
+
+        if (targetIndex >= 0 && lineRefs.current[targetIndex] && containerRef.current) {
             const container = containerRef.current
-            const firstChange = firstChangeRef.current
+            const target = lineRefs.current[targetIndex]
 
             const lineHeight = 28
             const contextLines = 5
-            const targetScroll = Math.max(0, firstChange.offsetTop - (lineHeight * contextLines))
+            const targetScroll = Math.max(0, target!.offsetTop - (lineHeight * contextLines))
 
             container.scrollTop = targetScroll
         }
-    }, [preview])
+    }, [preview, activeLineIndex, diffLines])
 
     if (!preview) {
         return (
@@ -76,9 +105,6 @@ export function DiffPreview({ preview }: DiffPreviewProps) {
         )
     }
 
-    const hasChanges = preview.addCount > 0 || preview.overwriteCount > 0
-    const diffLines = preview.diffLines || []
-
     if (diffLines.length === 0) {
         return (
             <div className="flex-1 flex items-center justify-center text-muted-foreground bg-slate-50 rounded-lg border border-dashed">
@@ -87,23 +113,50 @@ export function DiffPreview({ preview }: DiffPreviewProps) {
         )
     }
 
-    const firstChangeIndex = diffLines.findIndex(line =>
-        line.type === 'add' || line.type === 'update-old' || line.type === 'update-new'
-    )
+    const fullPath = `${projectRootName || 'root'}${resPath ? '/' + resPath : ''}/${preview.folderName}/strings.xml`
+    const shortPath = `${preview.folderName}/strings.xml`
 
     return (
         <div className="flex-1 overflow-hidden flex flex-col bg-white rounded-lg border">
             {/* Header */}
-            <div className="px-4 py-2 border-b bg-slate-50 flex items-center">
-                <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium">导入预览</span>
-                    <span className="text-xs text-muted-foreground">|</span>
-                    <span className="text-sm font-mono text-slate-600">
-                        {preview.folderName}/strings.xml
-                    </span>
-                    <div className="flex items-center gap-2 text-xs">
-                        <span className="text-muted-foreground">{diffLines.length} 行</span>
+            {/* Header */}
+            <div className="px-4 py-2 border-b bg-slate-50 flex items-center h-10 gap-3">
+                <span className="text-sm font-medium flex-shrink-0">导入预览</span>
+                <span className="text-xs text-muted-foreground flex-shrink-0">|</span>
+
+                <div className="flex-1 min-w-0 flex items-center">
+                    <div className="relative group/path truncate">
+                        <span
+                            className="text-sm font-mono text-slate-600 hover:text-primary cursor-pointer transition-colors bg-slate-100/50 px-2 py-0.5 rounded border border-transparent hover:border-slate-200 truncate block max-w-full"
+                            onClick={() => setShowFullPath(!showFullPath)}
+                            title={showFullPath ? "点击切换短路径" : "点击切换全路径"}
+                        >
+                            {showFullPath ? fullPath : shortPath}
+                        </span>
                     </div>
+                </div>
+
+                <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        disabled={!hasPrev}
+                        onClick={onNavigatePrev}
+                        title="上一个变更"
+                    >
+                        <ChevronUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        disabled={!hasNext}
+                        onClick={onNavigateNext}
+                        title="下一个变更"
+                    >
+                        <ChevronDown className="h-4 w-4" />
+                    </Button>
                 </div>
             </div>
 
@@ -151,7 +204,8 @@ export function DiffPreview({ preview }: DiffPreviewProps) {
                                 line={line}
                                 oldLineNum={oldLineNum}
                                 newLineNum={newLineNum}
-                                ref={idx === firstChangeIndex ? firstChangeRef : undefined}
+                                ref={el => lineRefs.current[idx] = el}
+                                isActive={idx === activeLineIndex}
                             />
                         )
                     })
@@ -165,14 +219,17 @@ interface DiffLineProps {
     line: XmlDiffLine
     oldLineNum?: number | string
     newLineNum?: number | string
+    isActive?: boolean
 }
 
-const DiffLine = forwardRef<HTMLDivElement, DiffLineProps>(({ line, oldLineNum, newLineNum }, ref) => {
+const DiffLine = forwardRef<HTMLDivElement, DiffLineProps>(({ line, oldLineNum, newLineNum, isActive }, ref) => {
     const colWidth = 'w-10'
+
+    const activeClass = isActive ? 'ring-2 ring-primary ring-inset z-10' : ''
 
     if (line.type === 'add') {
         return (
-            <div ref={ref} className="flex border-b border-slate-100">
+            <div ref={ref} className={`flex border-b border-slate-100 relative ${activeClass}`}>
                 {/* Left column (old) - empty for added lines */}
                 <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-300 bg-green-50 border-r select-none`}>
 
@@ -190,7 +247,7 @@ const DiffLine = forwardRef<HTMLDivElement, DiffLineProps>(({ line, oldLineNum, 
 
     if (line.type === 'update-old') {
         return (
-            <div ref={ref} className="flex border-b border-slate-100">
+            <div ref={ref} className={`flex border-b border-slate-100 relative ${activeClass}`}>
                 {/* Left column (old) */}
                 <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-red-500 bg-red-50 border-r select-none`}>
                     {oldLineNum}
@@ -208,7 +265,7 @@ const DiffLine = forwardRef<HTMLDivElement, DiffLineProps>(({ line, oldLineNum, 
 
     if (line.type === 'update-new') {
         return (
-            <div ref={ref} className="flex border-b border-slate-100">
+            <div ref={ref} className={`flex border-b border-slate-100 relative ${activeClass}`}>
                 {/* Left column (old) - empty */}
                 <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-300 bg-green-50 border-r select-none`}>
 
@@ -226,7 +283,7 @@ const DiffLine = forwardRef<HTMLDivElement, DiffLineProps>(({ line, oldLineNum, 
 
     // unchanged
     return (
-        <div ref={ref} className="flex border-b border-slate-100">
+        <div ref={ref} className={`flex border-b border-slate-100 relative ${activeClass}`}>
             {/* Left column (old) */}
             <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-400 bg-slate-50 border-r select-none`}>
                 {oldLineNum}

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { FolderOpen } from 'lucide-react'
 import {
     scanStringsFromDirectory,
@@ -52,6 +52,7 @@ export function StringResourceProcessor() {
     // Preview state
     const [previewDetails, setPreviewDetails] = useState<MergePreviewDetail[]>([])
     const [selectedLocale, setSelectedLocale] = useState<string | null>(null)
+    const [globalChangeIndex, setGlobalChangeIndex] = useState(-1)
 
     // UI state
     const [status, setStatus] = useState<OperationStatus>('idle')
@@ -90,16 +91,25 @@ export function StringResourceProcessor() {
         if (sourceFiles.length > 0 && mappings.length > 0 && targetDirHandle) {
             const sourceResources = applyMappingToSources(sourceFiles, mappings)
             const preview = generateMergePreviewWithDetails(sourceResources, targetResources, replaceExisting)
+
+            // Sort preview by locale to ensure consistent ordering (values before values-ar, etc.)
+            preview.sort((a, b) => a.locale.localeCompare(b.locale))
+
             setPreviewDetails(preview)
 
-            // Auto-select first locale if none selected
-            if (!selectedLocale && preview.length > 0) {
-                setSelectedLocale(preview[0].locale)
+            // Auto-select first locale with changes (or first locale if none have changes)
+            const isValidSelection = selectedLocale && preview.some(p => p.locale === selectedLocale)
+            if (!isValidSelection && preview.length > 0) {
+                // Find first locale with actual changes (addCount or overwriteCount > 0)
+                const firstWithChanges = preview.find(p => p.addCount > 0 || p.overwriteCount > 0)
+                const localeToSelect = firstWithChanges ? firstWithChanges.locale : preview[0].locale
+                setSelectedLocale(localeToSelect)
+                setGlobalChangeIndex(0)
             }
 
             setStatus('ready')
         }
-    }, [mappings, sourceFiles, targetResources, targetDirHandle, replaceExisting, selectedLocale])
+    }, [mappings, sourceFiles, targetResources, targetDirHandle, replaceExisting]) // Removed selectedLocale to avoid re-triggering preview generation on navigation
 
     // Auto-save mappings when they change
     useEffect(() => {
@@ -205,6 +215,52 @@ export function StringResourceProcessor() {
             }
         }
     }, [targetDirHandle, mappings])
+
+    // Refresh all files
+    const handleRefresh = useCallback(async () => {
+        if (!targetDirHandle && !sourceDirHandle) return
+
+        setStatus('scanning')
+        setError(null)
+
+        try {
+            // Refresh target resources if project is selected
+            if (targetDirHandle) {
+                const resources = await scanStringsFromDirectory(targetDirHandle)
+                setTargetResources(resources)
+            }
+
+            // Refresh source files if translation folder is selected
+            if (sourceDirHandle) {
+                const files = await scanAllXmlFiles(sourceDirHandle)
+                setSourceFiles(files)
+
+                // Update mappings with new entry counts
+                const existingMappingMap = new Map(mappings.map(m => [m.sourceFileName, m]))
+                const updatedMappings: LocaleMapping[] = files.map(f => {
+                    const existing = existingMappingMap.get(f.fileName)
+                    if (existing) {
+                        return { ...existing, entryCount: f.entries.size }
+                    }
+                    return {
+                        sourceFileName: f.fileName,
+                        targetFolder: f.suggestedFolder,
+                        locale: f.suggestedLocale,
+                        enabled: true,
+                        entryCount: f.entries.size
+                    }
+                })
+                // Sort by targetFolder to maintain consistent ordering
+                updatedMappings.sort((a, b) => a.targetFolder.localeCompare(b.targetFolder))
+                setMappings(updatedMappings)
+            }
+
+            setStatus('ready')
+        } catch (err) {
+            setError('刷新文件失败')
+            setStatus('error')
+        }
+    }, [targetDirHandle, sourceDirHandle, mappings])
 
     // Toggle mapping enabled
     const toggleMapping = useCallback((index: number) => {
@@ -320,6 +376,74 @@ export function StringResourceProcessor() {
     const totalAdd = previewDetails.reduce((sum, p) => sum + p.addCount, 0)
     const totalUpdate = previewDetails.reduce((sum, p) => sum + p.overwriteCount, 0)
 
+    // Flat list of all changes for cross-file navigation
+    const globalChanges = useMemo(() => {
+        const changes: { locale: string, lineIndex: number }[] = []
+        previewDetails.forEach(p => {
+            p.diffLines?.forEach((line, idx) => {
+                if (line.type === 'add' || line.type === 'update-old' || line.type === 'update-new') {
+                    changes.push({ locale: p.locale, lineIndex: idx })
+                }
+            })
+        })
+        return changes
+    }, [previewDetails])
+
+    const navigateChange = useCallback((delta: number) => {
+        if (globalChanges.length === 0) return
+
+        let newIndex = globalChangeIndex + delta
+
+        // Implement circular navigation
+        if (newIndex < 0) {
+            newIndex = globalChanges.length - 1  // Wrap to last
+        } else if (newIndex >= globalChanges.length) {
+            newIndex = 0  // Wrap to first
+        }
+
+        const change = globalChanges[newIndex]
+        setGlobalChangeIndex(newIndex)
+        if (change.locale !== selectedLocale) {
+            setSelectedLocale(change.locale)
+        }
+    }, [globalChangeIndex, globalChanges, selectedLocale])
+
+    // Update global index when locale is selected manually
+    const handleSelectLocale = useCallback((locale: string) => {
+        setSelectedLocale(locale)
+        const firstChangeIdx = globalChanges.findIndex((c: { locale: string }) => c.locale === locale)
+        if (firstChangeIdx >= 0) {
+            setGlobalChangeIndex(firstChangeIdx)
+        }
+    }, [globalChanges])
+
+
+    // Handle keyboard shortcuts for navigation
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // N for next change, P for previous change (only when not in input/textarea)
+            const target = e.target as HTMLElement
+            const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+
+            // Also check if any modifier keys are pressed (Ctrl, Alt, Meta)
+            const hasModifier = e.ctrlKey || e.altKey || e.metaKey
+
+            if (!isInputField && !showImportDialog && !showMappingDialog && !hasModifier) {
+                if (e.key === 'n' || e.key === 'N') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    navigateChange(1)
+                } else if (e.key === 'p' || e.key === 'P') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    navigateChange(-1)
+                }
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown, { capture: true })
+        return () => window.removeEventListener('keydown', handleKeyDown, { capture: true })
+    }, [showMappingDialog, showImportDialog, navigateChange])
+
     if (!isSupported) {
         return (
             <div className="flex-1 flex items-center justify-center p-6">
@@ -359,7 +483,7 @@ export function StringResourceProcessor() {
                                     previews={previewDetails}
                                     selectedLocale={selectedLocale}
                                     onToggleMapping={toggleMapping}
-                                    onSelectLocale={setSelectedLocale}
+                                    onSelectLocale={handleSelectLocale}
                                     onImportMappings={handleImportMappings}
                                     onOpenSettings={() => {
                                         setTempMappings([...mappings])
@@ -373,7 +497,20 @@ export function StringResourceProcessor() {
                                     }}
                                 />
                             </div>
-                            <DiffPreview preview={selectedPreview} />
+                            <DiffPreview
+                                preview={selectedPreview}
+                                projectRootName={projectRootName}
+                                resPath={selectedResDir?.path || null}
+                                activeLineIndex={
+                                    globalChangeIndex >= 0 && globalChanges[globalChangeIndex]?.locale === selectedLocale
+                                        ? globalChanges[globalChangeIndex].lineIndex
+                                        : null
+                                }
+                                onNavigatePrev={() => navigateChange(-1)}
+                                onNavigateNext={() => navigateChange(1)}
+                                hasPrev={globalChangeIndex > 0}
+                                hasNext={globalChangeIndex < globalChanges.length - 1}
+                            />
                         </>
                     ) : (
                         <div className="flex-1 flex items-center justify-center">
@@ -402,10 +539,12 @@ export function StringResourceProcessor() {
                         totalUpdate={totalUpdate}
                         isMerging={status === 'merging'}
                         canImport={totalAdd > 0 || totalUpdate > 0}
+                        canRefresh={!!(targetDirHandle || sourceDirHandle)}
                         onOpenImportDialog={() => {
                             setImportComment('')
                             setShowImportDialog(true)
                         }}
+                        onRefresh={handleRefresh}
                     />
                 )}
             </main>

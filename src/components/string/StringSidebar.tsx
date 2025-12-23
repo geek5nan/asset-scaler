@@ -69,7 +69,7 @@ export function StringSidebar({
                         className="w-full justify-start gap-2 h-10"
                         onClick={onSelectProjectDir}
                     >
-                        <FolderOpen className="h-4 w-4" />
+                        <FolderOpen className="h-4 w-4 shrink-0" />
                         <span className="truncate">
                             {projectRootName || '选择 Android 项目'}
                         </span>
@@ -81,7 +81,7 @@ export function StringSidebar({
                             <Label className="text-[11px] font-medium text-slate-500 mb-1.5 block uppercase tracking-wider">
                                 模块选择
                             </Label>
-                            <div className="relative">
+                            <div className="relative group">
                                 <div className="relative">
                                     <Input
                                         ref={inputRef}
@@ -149,7 +149,7 @@ export function StringSidebar({
                         className="w-full justify-start gap-2 h-10"
                         onClick={onSelectSourceDir}
                     >
-                        <FolderOpen className="h-4 w-4" />
+                        <FolderOpen className="h-4 w-4 shrink-0" />
                         <span className="truncate">
                             {sourceDirName || '选择翻译文件夹'}
                         </span>
