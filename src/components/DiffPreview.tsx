@@ -71,7 +71,7 @@ export function DiffPreview({ preview }: DiffPreviewProps) {
     if (!preview) {
         return (
             <div className="flex-1 flex items-center justify-center text-muted-foreground bg-slate-50 rounded-lg border border-dashed">
-                <p className="text-sm">选择左侧语言查看详细变更</p>
+                <p className="text-sm">选择左侧语言查看导入预览</p>
             </div>
         )
     }
@@ -96,7 +96,9 @@ export function DiffPreview({ preview }: DiffPreviewProps) {
             {/* Header */}
             <div className="px-4 py-2 border-b bg-slate-50 flex items-center">
                 <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium font-mono">
+                    <span className="text-sm font-medium">导入预览</span>
+                    <span className="text-xs text-muted-foreground">|</span>
+                    <span className="text-sm font-mono text-slate-600">
                         {preview.folderName}/strings.xml
                     </span>
                     <div className="flex items-center gap-2 text-xs">
@@ -118,26 +120,72 @@ export function DiffPreview({ preview }: DiffPreviewProps) {
                         此语言无变更，以下是目标文件现有内容
                     </div>
                 )}
-                {diffLines.map((line, idx) => (
-                    <DiffLine
-                        key={`${line.type}-${idx}`}
-                        line={line}
-                        ref={idx === firstChangeIndex ? firstChangeRef : undefined}
-                    />
-                ))}
+                {(() => {
+                    let oldLine = 0
+                    let newLine = 0
+
+                    return diffLines.map((line, idx) => {
+                        let oldLineNum: number | string | undefined
+                        let newLineNum: number | string | undefined
+
+                        if (line.type === 'unchanged') {
+                            // Both columns get incremented
+                            oldLine++
+                            newLine++
+                            oldLineNum = oldLine
+                            newLineNum = newLine
+                        } else if (line.type === 'update-old') {
+                            // Only old column
+                            oldLine++
+                            oldLineNum = oldLine
+                            newLineNum = undefined
+                        } else if (line.type === 'update-new') {
+                            // Only new column
+                            newLine++
+                            oldLineNum = undefined
+                            newLineNum = newLine
+                        } else if (line.type === 'add') {
+                            // Only new column
+                            newLine++
+                            oldLineNum = undefined
+                            newLineNum = newLine
+                        }
+
+                        return (
+                            <DiffLine
+                                key={`${line.type}-${idx}`}
+                                line={line}
+                                oldLineNum={oldLineNum}
+                                newLineNum={newLineNum}
+                                ref={idx === firstChangeIndex ? firstChangeRef : undefined}
+                            />
+                        )
+                    })
+                })()}
             </div>
         </div>
     )
 }
 
-const DiffLine = forwardRef<HTMLDivElement, { line: XmlDiffLine }>(({ line }, ref) => {
-    const lineNumberWidth = 'w-10'
+interface DiffLineProps {
+    line: XmlDiffLine
+    oldLineNum?: number | string
+    newLineNum?: number | string
+}
+
+const DiffLine = forwardRef<HTMLDivElement, DiffLineProps>(({ line, oldLineNum, newLineNum }, ref) => {
+    const colWidth = 'w-10'
 
     if (line.type === 'add') {
         return (
             <div ref={ref} className="flex border-b border-slate-100">
-                <div className={`${lineNumberWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-400 bg-green-50 border-r select-none`}>
-                    +
+                {/* Left column (old) - empty for added lines */}
+                <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-300 bg-green-50 border-r select-none`}>
+
+                </div>
+                {/* Right column (new) */}
+                <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-green-600 bg-green-50 border-r select-none`}>
+                    {newLineNum}
                 </div>
                 <div className="flex-1 py-1 px-3 bg-green-50/50 whitespace-pre-wrap break-all">
                     {highlightXml(line.content, 'text-green-700')}
@@ -149,8 +197,13 @@ const DiffLine = forwardRef<HTMLDivElement, { line: XmlDiffLine }>(({ line }, re
     if (line.type === 'update-old') {
         return (
             <div ref={ref} className="flex border-b border-slate-100">
-                <div className={`${lineNumberWidth} flex-shrink-0 text-right pr-2 py-1 text-red-600 bg-red-50 border-r select-none`}>
-                    {line.lineNumber || '-'}
+                {/* Left column (old) */}
+                <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-red-500 bg-red-50 border-r select-none`}>
+                    {oldLineNum}
+                </div>
+                {/* Right column (new) - empty for deleted lines */}
+                <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-300 bg-red-50 border-r select-none`}>
+
                 </div>
                 <div className="flex-1 py-1 px-3 bg-red-50/50 whitespace-pre-wrap break-all line-through">
                     {highlightXml(line.content, 'text-red-700')}
@@ -162,8 +215,13 @@ const DiffLine = forwardRef<HTMLDivElement, { line: XmlDiffLine }>(({ line }, re
     if (line.type === 'update-new') {
         return (
             <div ref={ref} className="flex border-b border-slate-100">
-                <div className={`${lineNumberWidth} flex-shrink-0 text-right pr-2 py-1 text-green-600 bg-green-50 border-r select-none`}>
-                    +
+                {/* Left column (old) - empty */}
+                <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-300 bg-green-50 border-r select-none`}>
+
+                </div>
+                {/* Right column (new) */}
+                <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-green-600 bg-green-50 border-r select-none`}>
+                    {newLineNum}
                 </div>
                 <div className="flex-1 py-1 px-3 bg-green-50/50 whitespace-pre-wrap break-all">
                     {highlightXml(line.content, 'text-green-700')}
@@ -175,8 +233,13 @@ const DiffLine = forwardRef<HTMLDivElement, { line: XmlDiffLine }>(({ line }, re
     // unchanged
     return (
         <div ref={ref} className="flex border-b border-slate-100">
-            <div className={`${lineNumberWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-400 bg-slate-50 border-r select-none`}>
-                {line.lineNumber}
+            {/* Left column (old) */}
+            <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-400 bg-slate-50 border-r select-none`}>
+                {oldLineNum}
+            </div>
+            {/* Right column (new) */}
+            <div className={`${colWidth} flex-shrink-0 text-right pr-2 py-1 text-slate-400 bg-slate-50 border-r select-none`}>
+                {newLineNum}
             </div>
             <div className="flex-1 py-1 px-3 whitespace-pre-wrap break-all">
                 {highlightXml(line.content, 'text-slate-600')}

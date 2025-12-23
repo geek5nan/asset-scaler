@@ -490,6 +490,18 @@ export function generateMergePreviewWithDetails(
             })
         } else {
             // New locale - all items are additions
+            // Add XML declaration and opening resources tag
+            diffLines.push({
+                lineNumber: 1,
+                content: '<?xml version="1.0" encoding="utf-8"?>',
+                type: 'add'
+            })
+            diffLines.push({
+                lineNumber: 2,
+                content: '<resources>',
+                type: 'add'
+            })
+
             source.entries.forEach((value, key) => {
                 addedItems.push({
                     key,
@@ -502,6 +514,13 @@ export function generateMergePreviewWithDetails(
                     type: 'add',
                     stringKey: key
                 })
+            })
+
+            // Add closing resources tag
+            diffLines.push({
+                lineNumber: 0,
+                content: '</resources>',
+                type: 'add'
             })
 
             previews.push({

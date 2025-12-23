@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { FolderOpen, Loader2, Check, AlertCircle, MoreHorizontal, Download, Upload, Settings2 } from 'lucide-react'
+import { FolderOpen, Loader2, Check, AlertCircle, MoreHorizontal, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -15,9 +14,7 @@ import {
 } from '@/lib/xmlUtils'
 import {
     saveMappingConfig,
-    loadMappingConfig,
-    exportMappingConfig,
-    parseImportedConfig
+    loadMappingConfig
 } from '@/lib/localeMapping'
 import {
     LocaleResources,
@@ -29,6 +26,7 @@ import {
 } from '@/types'
 import { DiffPreview } from './DiffPreview'
 import { ModuleSelectorDialog } from './ModuleSelectorDialog'
+import { MappingList } from './MappingList'
 
 type OperationStatus = 'idle' | 'scanning' | 'ready' | 'merging' | 'success' | 'error'
 
@@ -48,7 +46,6 @@ export function StringResourceProcessor() {
 
     // Mapping state
     const [mappings, setMappings] = useState<LocaleMapping[]>([])
-    const [showMappingDialog, setShowMappingDialog] = useState(false)
 
     // Options
     const [replaceExisting, setReplaceExisting] = useState(true)
@@ -61,9 +58,9 @@ export function StringResourceProcessor() {
     const [status, setStatus] = useState<OperationStatus>('idle')
     const [error, setError] = useState<string | null>(null)
     const [showModuleDialog, setShowModuleDialog] = useState(false)
-
-    // Refs
-    const importInputRef = useRef<HTMLInputElement>(null)
+    const [showMappingDialog, setShowMappingDialog] = useState(false)
+    const [focusIndex, setFocusIndex] = useState<number | null>(null)
+    const dialogListRef = useRef<HTMLDivElement>(null)
 
     // Check if File System Access API is supported
     const isSupported = 'showDirectoryPicker' in window
@@ -81,12 +78,22 @@ export function StringResourceProcessor() {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 if (showMappingDialog) setShowMappingDialog(false)
-                if (showModuleDialog) setShowModuleDialog(false)
+                else if (showModuleDialog) setShowModuleDialog(false)
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [showMappingDialog, showModuleDialog])
+    }, [showModuleDialog, showMappingDialog])
+
+    // Scroll to focused item in dialog
+    useEffect(() => {
+        if (showMappingDialog && focusIndex !== null && dialogListRef.current) {
+            const item = dialogListRef.current.children[focusIndex] as HTMLElement
+            if (item) {
+                item.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }
+        }
+    }, [showMappingDialog, focusIndex])
 
     // Update preview when data changes
     useEffect(() => {
@@ -103,6 +110,17 @@ export function StringResourceProcessor() {
             setStatus('ready')
         }
     }, [mappings, sourceFiles, targetResources, targetDirHandle, replaceExisting, selectedLocale])
+
+    // Auto-save mappings when they change
+    useEffect(() => {
+        if (mappings.length > 0) {
+            const config: LocaleMappingConfig = {
+                mappings,
+                lastModified: new Date().toISOString()
+            }
+            saveMappingConfig(config)
+        }
+    }, [mappings])
 
     // Load a specific res directory
     const loadResDirectory = useCallback(async (resDir: AndroidResourceDir) => {
@@ -136,7 +154,6 @@ export function StringResourceProcessor() {
             } else if (resDirs.length === 1) {
                 await loadResDirectory(resDirs[0])
             } else {
-                // Multiple found, look for 'app' module first
                 const appModule = resDirs.find(d => d.name.toLowerCase() === 'app')
                 if (appModule) {
                     await loadResDirectory(appModule)
@@ -200,46 +217,9 @@ export function StringResourceProcessor() {
         ))
     }, [])
 
-    // Auto-save mappings when they change
-    useEffect(() => {
-        if (mappings.length > 0) {
-            const config: LocaleMappingConfig = {
-                mappings,
-                lastModified: new Date().toISOString()
-            }
-            saveMappingConfig(config)
-        }
-    }, [mappings])
-
-    // Export mappings as JSON file
-    const handleExportMappings = useCallback(() => {
-        const config: LocaleMappingConfig = {
-            mappings,
-            lastModified: new Date().toISOString()
-        }
-        exportMappingConfig(config)
-    }, [mappings])
-
-    // Import mappings from JSON file
-    const handleImportMappings = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (!file) return
-
-        const reader = new FileReader()
-        reader.onload = () => {
-            const config = parseImportedConfig(reader.result as string)
-            if (config) {
-                setMappings(config.mappings)
-            } else {
-                setError('无效的配置文件')
-            }
-        }
-        reader.readAsText(file)
-
-        // Reset input
-        if (importInputRef.current) {
-            importInputRef.current.value = ''
-        }
+    // Handle import mappings
+    const handleImportMappings = useCallback((config: LocaleMappingConfig) => {
+        setMappings(config.mappings)
     }, [])
 
     // Execute merge
@@ -249,11 +229,9 @@ export function StringResourceProcessor() {
         setStatus('merging')
         setError(null)
 
-        // Filter out updates if replaceExisting is false
         let sourceResources = applyMappingToSources(sourceFiles, mappings)
 
         if (!replaceExisting) {
-            // Remove entries that already exist in target
             const targetMap = new Map(targetResources.map(r => [r.locale, r]))
             sourceResources = sourceResources.map(source => {
                 const target = targetMap.get(source.locale)
@@ -274,7 +252,6 @@ export function StringResourceProcessor() {
 
         if (result.success) {
             setStatus('success')
-            // Refresh target resources after merge
             const updated = await scanStringsFromDirectory(targetDirHandle)
             setTargetResources(updated)
         } else {
@@ -310,7 +287,7 @@ export function StringResourceProcessor() {
 
     return (
         <div className="flex flex-1 overflow-hidden">
-            {/* Sidebar */}
+            {/* Sidebar - Simplified */}
             <aside className="w-[280px] border-r bg-white flex-shrink-0 overflow-y-auto">
                 <div className="p-6 space-y-6">
                     {/* Project (Output) Section */}
@@ -388,79 +365,6 @@ export function StringResourceProcessor() {
                         )}
                     </div>
 
-                    {/* Mapping Section */}
-                    {mappings.length > 0 && (
-                        <>
-                            <div className="h-px bg-border" />
-                            <div>
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                        映射配置
-                                    </h3>
-                                    <div className="flex items-center gap-1">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-6 w-6 p-0"
-                                            onClick={handleExportMappings}
-                                            title="导出为 JSON"
-                                        >
-                                            <Download className="h-3 w-3" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-6 w-6 p-0"
-                                            onClick={() => importInputRef.current?.click()}
-                                            title="导入 JSON"
-                                        >
-                                            <Upload className="h-3 w-3" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-6 w-6 p-0"
-                                            onClick={() => setShowMappingDialog(true)}
-                                            title="编辑映射"
-                                        >
-                                            <Settings2 className="h-3 w-3" />
-                                        </Button>
-                                        <input
-                                            ref={importInputRef}
-                                            type="file"
-                                            accept=".json"
-                                            className="hidden"
-                                            onChange={handleImportMappings}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Mapping Preview - fixed height with scroll */}
-                                <div className="max-h-32 overflow-y-auto space-y-1.5">
-                                    {mappings.map((m, idx) => (
-                                        <div
-                                            key={m.sourceFileName}
-                                            className={`flex items-center gap-2 text-xs ${!m.enabled ? 'opacity-50' : ''}`}
-                                        >
-                                            <Checkbox
-                                                checked={m.enabled}
-                                                onCheckedChange={() => toggleMapping(idx)}
-                                                className="h-3.5 w-3.5"
-                                            />
-                                            <span className="truncate flex-1 font-mono">
-                                                {m.sourceFileName.replace('.xml', '')}
-                                            </span>
-                                            <span className="text-muted-foreground">→</span>
-                                            <span className="font-mono text-muted-foreground">
-                                                {m.targetFolder.replace('values-', '')}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </>
-                    )}
-
                     {/* Options Section */}
                     {mappings.length > 0 && (
                         <>
@@ -488,59 +392,33 @@ export function StringResourceProcessor() {
                 </div>
             </aside>
 
-            {/* Main Content */}
+            {/* Main Content - Side by Side Layout */}
             <main className="flex-1 flex flex-col overflow-hidden bg-slate-50">
                 {/* Content Area */}
                 <div className="flex-1 flex overflow-hidden p-6 gap-4">
-                    {previewDetails.length > 0 ? (
+                    {projectRootName && sourceDirHandle && mappings.length > 0 ? (
                         <>
-                            {/* Language List */}
-                            <div className="w-[240px] flex-shrink-0 bg-white rounded-lg border overflow-hidden flex flex-col">
-                                <div className="px-4 py-2 border-b bg-slate-50">
-                                    <span className="text-sm font-medium">配对目录</span>
-                                </div>
-                                <div className="flex-1 overflow-y-auto">
-                                    {previewDetails.map(preview => {
-                                        const isSelected = preview.locale === selectedLocale
-                                        const hasUpdates = preview.overwriteCount > 0
-                                        return (
-                                            <button
-                                                key={preview.locale}
-                                                onClick={() => setSelectedLocale(preview.locale)}
-                                                className={`w-full text-left px-4 py-3 border-b transition-colors ${isSelected ? 'bg-primary/5' : 'hover:bg-slate-50'
-                                                    }`}
-                                            >
-                                                <div className="flex items-center justify-between">
-                                                    <span className="font-mono text-sm">
-                                                        {preview.folderName}
-                                                    </span>
-                                                    {preview.isNewFile && (
-                                                        <Badge variant="secondary" className="text-[10px] h-5">
-                                                            新建
-                                                        </Badge>
-                                                    )}
-                                                    {hasUpdates && (
-                                                        <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
-                                                    )}
-                                                </div>
-                                                <div className="flex gap-3 mt-1 text-xs">
-                                                    {preview.addCount > 0 && (
-                                                        <span className="text-green-600">+{preview.addCount}</span>
-                                                    )}
-                                                    {preview.overwriteCount > 0 && (
-                                                        <span className="text-amber-600">~{preview.overwriteCount}</span>
-                                                    )}
-                                                    {preview.addCount === 0 && preview.overwriteCount === 0 && (
-                                                        <span className="text-muted-foreground">无变更</span>
-                                                    )}
-                                                </div>
-                                            </button>
-                                        )
-                                    })}
-                                </div>
+                            {/* Mapping List (Left Side) */}
+                            <div className="w-[280px] flex-shrink-0">
+                                <MappingList
+                                    mappings={mappings}
+                                    previews={previewDetails}
+                                    selectedLocale={selectedLocale}
+                                    onToggleMapping={toggleMapping}
+                                    onSelectLocale={setSelectedLocale}
+                                    onImportMappings={handleImportMappings}
+                                    onOpenSettings={() => {
+                                        setFocusIndex(null)
+                                        setShowMappingDialog(true)
+                                    }}
+                                    onEditItem={(index) => {
+                                        setFocusIndex(index)
+                                        setShowMappingDialog(true)
+                                    }}
+                                />
                             </div>
 
-                            {/* Diff Preview */}
+                            {/* Diff Preview (Right Side) */}
                             <DiffPreview preview={selectedPreview} />
                         </>
                     ) : (
@@ -594,7 +472,7 @@ export function StringResourceProcessor() {
                                     合并中...
                                 </>
                             ) : (
-                                '执行合并'
+                                '开始导入'
                             )}
                         </Button>
                     </div>
@@ -612,43 +490,52 @@ export function StringResourceProcessor() {
 
             {/* Mapping Editor Dialog */}
             {showMappingDialog && (
-                <div
-                    className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-                    onClick={() => setShowMappingDialog(false)}
-                >
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
                     <div
-                        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden"
-                        onClick={(e) => e.stopPropagation()}
-                    >
+                        className="absolute inset-0 bg-black/50"
+                        onClick={() => setShowMappingDialog(false)}
+                    />
+                    <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
                         <div className="px-6 py-4 border-b flex items-center justify-between">
-                            <h2 className="text-lg font-semibold">编辑映射配置</h2>
-                            <Button variant="ghost" size="sm" onClick={() => setShowMappingDialog(false)}>
-                                ✕
+                            <h2 className="text-lg font-semibold">编辑导入规则</h2>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                onClick={() => setShowMappingDialog(false)}
+                            >
+                                <X className="h-4 w-4" />
                             </Button>
                         </div>
-                        <div className="p-6 overflow-y-auto max-h-[calc(80vh-140px)]">
-                            <div className="space-y-3">
-                                {mappings.map((m, idx) => (
-                                    <div key={m.sourceFileName} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                        <div ref={dialogListRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+                            {mappings.map((m, idx) => (
+                                <div
+                                    key={m.sourceFileName}
+                                    className={`p-3 rounded-lg border ${focusIndex === idx ? 'ring-2 ring-primary bg-primary/5' : 'bg-slate-50'
+                                        }`}
+                                >
+                                    <div className="flex items-center gap-3 mb-2">
                                         <Checkbox
                                             checked={m.enabled}
                                             onCheckedChange={() => toggleMapping(idx)}
+                                            className="h-4 w-4"
                                         />
-                                        <div className="flex-1">
-                                            <p className="font-mono text-sm">{m.sourceFileName}</p>
-                                            <p className="text-xs text-muted-foreground">{m.entryCount} 条</p>
-                                        </div>
-                                        <span className="text-muted-foreground">→</span>
+                                        <span className="text-sm text-slate-600">
+                                            {m.sourceFileName}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 ml-7">
+                                        <Label className="text-xs text-slate-500">目标:</Label>
                                         <Input
                                             value={m.targetFolder}
                                             onChange={(e) => updateMapping(idx, { targetFolder: e.target.value })}
-                                            className="w-40 h-8 font-mono text-sm"
+                                            className="h-8 text-sm font-mono flex-1"
                                         />
                                     </div>
-                                ))}
-                            </div>
+                                </div>
+                            ))}
                         </div>
-                        <div className="px-6 py-3 border-t flex justify-end">
+                        <div className="px-6 py-4 border-t flex justify-end">
                             <Button onClick={() => setShowMappingDialog(false)}>
                                 完成
                             </Button>
