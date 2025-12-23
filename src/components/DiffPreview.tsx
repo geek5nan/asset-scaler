@@ -103,12 +103,6 @@ export function DiffPreview({ preview }: DiffPreviewProps) {
                     </span>
                     <div className="flex items-center gap-2 text-xs">
                         <span className="text-muted-foreground">{diffLines.length} 行</span>
-                        {preview.addCount > 0 && (
-                            <span className="text-green-600">+{preview.addCount}</span>
-                        )}
-                        {preview.overwriteCount > 0 && (
-                            <span className="text-amber-600">~{preview.overwriteCount}</span>
-                        )}
                     </div>
                 </div>
             </div>

@@ -29,7 +29,8 @@ export interface LocaleResources {
   locale: string              // 'default' | 'zh' | 'ja' | 'ko' | ...
   folderName: string          // 'values' | 'values-zh' | 'values-rCN' | ...
   entries: Map<string, string> // name -> value
-  rawContent?: string         // original file content
+  rawContent?: string         // original file content (for target files)
+  rawLines?: Map<string, string> // key -> full line content (for source files, with comments)
 }
 
 // Merge operation result
@@ -100,7 +101,8 @@ export interface LocaleMappingConfig {
 export interface SourceXmlFile {
   fileName: string
   file: File
-  entries: Map<string, string>
+  entries: Map<string, string>  // key -> value (text content only)
+  rawLines: Map<string, string> // key -> full line content (with comments)
   suggestedLocale: string
   suggestedFolder: string
 }

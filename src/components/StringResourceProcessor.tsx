@@ -59,6 +59,8 @@ export function StringResourceProcessor() {
     const [error, setError] = useState<string | null>(null)
     const [showModuleDialog, setShowModuleDialog] = useState(false)
     const [showMappingDialog, setShowMappingDialog] = useState(false)
+    const [showImportDialog, setShowImportDialog] = useState(false)
+    const [importComment, setImportComment] = useState('')
     const [focusIndex, setFocusIndex] = useState<number | null>(null)
     const dialogListRef = useRef<HTMLDivElement>(null)
 
@@ -77,13 +79,14 @@ export function StringResourceProcessor() {
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
-                if (showMappingDialog) setShowMappingDialog(false)
+                if (showImportDialog) setShowImportDialog(false)
+                else if (showMappingDialog) setShowMappingDialog(false)
                 else if (showModuleDialog) setShowModuleDialog(false)
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [showModuleDialog, showMappingDialog])
+    }, [showModuleDialog, showMappingDialog, showImportDialog])
 
     // Scroll to focused item in dialog
     useEffect(() => {
@@ -180,15 +183,28 @@ export function StringResourceProcessor() {
             const files = await scanAllXmlFiles(handle)
             setSourceFiles(files)
 
-            // Generate initial mappings from files
-            const initialMappings: LocaleMapping[] = files.map(f => ({
-                sourceFileName: f.fileName,
-                targetFolder: f.suggestedFolder,
-                locale: f.suggestedLocale,
-                enabled: true,
-                entryCount: f.entries.size
-            }))
-            setMappings(initialMappings)
+            // Generate initial mappings from files, preserving existing rules where possible
+            const existingMappingMap = new Map(mappings.map(m => [m.sourceFileName, m]))
+
+            const newMappings: LocaleMapping[] = files.map(f => {
+                // Try to find existing mapping for this source file
+                const existing = existingMappingMap.get(f.fileName)
+                if (existing) {
+                    // Preserve existing rule, but update entryCount
+                    return { ...existing, entryCount: f.entries.size }
+                }
+                // Generate new mapping for new source file
+                return {
+                    sourceFileName: f.fileName,
+                    targetFolder: f.suggestedFolder,
+                    locale: f.suggestedLocale,
+                    enabled: true,
+                    entryCount: f.entries.size
+                }
+            })
+            // Sort by targetFolder for better organization
+            newMappings.sort((a, b) => a.targetFolder.localeCompare(b.targetFolder))
+            setMappings(newMappings)
 
             if (targetDirHandle) {
                 setStatus('ready')
@@ -201,7 +217,7 @@ export function StringResourceProcessor() {
                 setStatus('error')
             }
         }
-    }, [targetDirHandle])
+    }, [targetDirHandle, mappings])
 
     // Toggle mapping enabled
     const toggleMapping = useCallback((index: number) => {
@@ -222,10 +238,11 @@ export function StringResourceProcessor() {
         setMappings(config.mappings)
     }, [])
 
-    // Execute merge
-    const handleMerge = useCallback(async () => {
+    // Execute merge with optional comment
+    const handleMerge = useCallback(async (comment?: string) => {
         if (!targetDirHandle || sourceFiles.length === 0) return
 
+        setShowImportDialog(false)
         setStatus('merging')
         setError(null)
 
@@ -237,18 +254,23 @@ export function StringResourceProcessor() {
                 const target = targetMap.get(source.locale)
                 if (target) {
                     const filteredEntries = new Map<string, string>()
+                    const filteredRawLines = new Map<string, string>()
                     source.entries.forEach((value, key) => {
                         if (!target.entries.has(key)) {
                             filteredEntries.set(key, value)
+                            // Also filter rawLines to keep in sync
+                            if (source.rawLines?.has(key)) {
+                                filteredRawLines.set(key, source.rawLines.get(key)!)
+                            }
                         }
                     })
-                    return { ...source, entries: filteredEntries }
+                    return { ...source, entries: filteredEntries, rawLines: filteredRawLines }
                 }
                 return source
             })
         }
 
-        const result = await executeMerge(targetDirHandle, sourceResources, targetResources)
+        const result = await executeMerge(targetDirHandle, sourceResources, targetResources, comment)
 
         if (result.success) {
             setStatus('success')
@@ -463,7 +485,10 @@ export function StringResourceProcessor() {
                             {previewDetails.length} 个语言 · +{totalAdd} 新增 · ~{totalUpdate} 更新
                         </p>
                         <Button
-                            onClick={handleMerge}
+                            onClick={() => {
+                                setImportComment('')
+                                setShowImportDialog(true)
+                            }}
                             disabled={status === 'merging' || (totalAdd === 0 && totalUpdate === 0)}
                         >
                             {status === 'merging' ? (
@@ -538,6 +563,59 @@ export function StringResourceProcessor() {
                         <div className="px-6 py-4 border-t flex justify-end">
                             <Button onClick={() => setShowMappingDialog(false)}>
                                 完成
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Import Confirmation Dialog */}
+            {showImportDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div
+                        className="absolute inset-0 bg-black/50"
+                        onClick={() => setShowImportDialog(false)}
+                    />
+                    <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+                        <div className="px-6 py-4 border-b flex items-center justify-between">
+                            <h3 className="text-lg font-semibold">确认导入</h3>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setShowImportDialog(false)}
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                        <div className="px-6 py-4 space-y-4">
+                            <div className="text-sm text-muted-foreground">
+                                即将导入 {previewDetails.length} 个语言 · +{totalAdd} 新增 · ~{totalUpdate} 更新
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="import-comment">导入说明（可选）</Label>
+                                <Input
+                                    id="import-comment"
+                                    value={importComment}
+                                    onChange={(e) => setImportComment(e.target.value)}
+                                    placeholder={`Imported on ${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    这段说明将作为注释添加到导入条目之前
+                                </p>
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 border-t flex justify-end gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowImportDialog(false)}
+                            >
+                                取消
+                            </Button>
+                            <Button
+                                onClick={() => handleMerge(importComment || undefined)}
+                            >
+                                确认导入
                             </Button>
                         </div>
                     </div>

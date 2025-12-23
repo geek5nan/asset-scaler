@@ -100,20 +100,23 @@ export function extractLocaleFromFolderName(folderName: string): string {
 
 /**
  * Parse XML content and extract string resources as Map
+ * Also extracts rawLines which preserves the full line content including comments
  */
-export function parseStringsXml(content: string): ParseResult {
+export function parseStringsXml(content: string): ParseResult & { rawLines: Map<string, string> } {
+    const rawLines = new Map<string, string>()
+
     try {
         const parser = new DOMParser()
         const doc = parser.parseFromString(content, 'application/xml')
 
         const parseError = doc.querySelector('parsererror')
         if (parseError) {
-            return { success: false, entries: new Map(), error: 'XML 格式错误' }
+            return { success: false, entries: new Map(), rawLines, error: 'XML 格式错误' }
         }
 
         const resources = doc.querySelector('resources')
         if (!resources) {
-            return { success: false, entries: new Map(), error: '未找到 <resources> 标签' }
+            return { success: false, entries: new Map(), rawLines, error: '未找到 <resources> 标签' }
         }
 
         const entries = new Map<string, string>()
@@ -127,11 +130,31 @@ export function parseStringsXml(content: string): ParseResult {
             }
         })
 
-        return { success: true, entries }
+        // Extract rawLines from original content using line-by-line scanning
+        // More robust than regex: handles any attribute order, preserves trailing comments
+        const lines = content.split('\n')
+
+        for (const line of lines) {
+            // Must contain <string to be a candidate
+            if (!line.includes('<string')) continue
+
+            // Must contain </string> (single-line element only)
+            if (!line.includes('</string>')) continue
+
+            // Extract name attribute (handles any position in the tag)
+            const nameMatch = line.match(/name=["']([^"']+)["']/)
+            if (!nameMatch) continue
+
+            // Store the complete line (trimmed of leading whitespace only)
+            rawLines.set(nameMatch[1], line.trimStart())
+        }
+
+        return { success: true, entries, rawLines }
     } catch (error) {
         return {
             success: false,
             entries: new Map(),
+            rawLines,
             error: error instanceof Error ? error.message : '解析失败'
         }
     }
@@ -193,6 +216,7 @@ export async function scanAllXmlFiles(
                         fileName: entry.name,
                         file,
                         entries: parseResult.entries,
+                        rawLines: parseResult.rawLines,
                         suggestedLocale: locale,
                         suggestedFolder: folder
                     })
@@ -224,7 +248,8 @@ export function applyMappingToSources(
             results.push({
                 locale: mapping.locale,
                 folderName: mapping.targetFolder,
-                entries: source.entries
+                entries: source.entries,
+                rawLines: source.rawLines
             })
         }
     }
@@ -296,27 +321,28 @@ export function generateMergePreviewWithDetails(
     replaceExisting: boolean
 ): MergePreviewDetail[] {
     const previews: MergePreviewDetail[] = []
-    const targetMap = new Map(targetResources.map(r => [r.locale, r]))
+    // Use folderName as key for matching (user may change targetFolder in mappings)
+    const targetMap = new Map(targetResources.map(r => [r.folderName, r]))
 
     for (const source of sourceResources) {
-        const target = targetMap.get(source.locale)
+        const target = targetMap.get(source.folderName)
         const addedItems: DiffItem[] = []
         const updatedItems: DiffItem[] = []
         const unchangedItems: DiffItem[] = []
         const diffLines: import('@/types').XmlDiffLine[] = []
 
         if (target && target.rawContent) {
-            // Track which target keys are updates
-            const updateMap = new Map<string, string>() // key -> new value
+            // Track which target keys will be replaced/added
+            const keysToReplace = new Set<string>() // existing keys to replace
             const processedKeys = new Set<string>()
 
-            // Build update map from source
+            // Build maps for add/update/unchanged
             source.entries.forEach((value, key) => {
                 processedKeys.add(key)
                 if (target.entries.has(key)) {
                     const oldValue = target.entries.get(key)!
                     if (oldValue !== value && replaceExisting) {
-                        updateMap.set(key, value)
+                        keysToReplace.add(key)
                         updatedItems.push({
                             key,
                             type: 'update',
@@ -351,6 +377,7 @@ export function generateMergePreviewWithDetails(
             })
 
             // Parse rawContent line by line to generate diffLines
+            // Now: replaced items show as deleted at original position (not followed by new value)
             const lines = target.rawContent.split('\n')
             const stringRegex = /<string\s+name="([^"]+)"[^>]*>/
 
@@ -360,24 +387,13 @@ export function generateMergePreviewWithDetails(
 
                 if (match) {
                     const key = match[1]
-                    if (updateMap.has(key)) {
-                        // This line will be updated - show old then new
+                    if (keysToReplace.has(key)) {
+                        // This line will be DELETED (replaced) - show as delete only
+                        // The new value will be added at the end
                         diffLines.push({
                             lineNumber,
                             content: line,
                             type: 'update-old',
-                            stringKey: key
-                        })
-                        // Generate new line content
-                        const newValue = updateMap.get(key)!
-                        const newLine = line.replace(
-                            />.*<\/string>/,
-                            `>${newValue}</string>`
-                        )
-                        diffLines.push({
-                            lineNumber: 0, // new line, no number
-                            content: newLine,
-                            type: 'update-new',
                             stringKey: key
                         })
                     } else {
@@ -399,18 +415,27 @@ export function generateMergePreviewWithDetails(
                 }
             })
 
-            // Add new entries at the end (before closing </resources>)
-            if (addedItems.length > 0) {
+            // Add all new/updated entries at the end (before closing </resources>)
+            // This matches actual import behavior: delete original + append at end
+            const allNewEntries = [
+                ...updatedItems.map(item => ({ key: item.key, value: item.newValue })),
+                ...addedItems.map(item => ({ key: item.key, value: item.newValue }))
+            ]
+
+            if (allNewEntries.length > 0) {
                 // Find the index of closing </resources> tag
                 const closingIndex = diffLines.findIndex(l => l.content.includes('</resources>'))
                 const insertIndex = closingIndex >= 0 ? closingIndex : diffLines.length
 
-                addedItems.forEach(item => {
+                allNewEntries.forEach(entry => {
+                    // Use rawLines if available to preserve source comments
+                    const lineContent = source.rawLines?.get(entry.key)
+                        || `<string name="${entry.key}">${entry.value}</string>`
                     diffLines.splice(insertIndex, 0, {
                         lineNumber: 0,
-                        content: `    <string name="${item.key}">${item.newValue}</string>`,
-                        type: 'add',
-                        stringKey: item.key
+                        content: `    ${lineContent}`,
+                        type: updatedItems.some(u => u.key === entry.key) ? 'update-new' : 'add',
+                        stringKey: entry.key
                     })
                 })
             }
@@ -508,9 +533,12 @@ export function generateMergePreviewWithDetails(
                     type: 'add',
                     newValue: value
                 })
+                // Use rawLines if available to preserve source comments
+                const lineContent = source.rawLines?.get(key)
+                    || `<string name="${key}">${value}</string>`
                 diffLines.push({
                     lineNumber: 0,
-                    content: `    <string name="${key}">${value}</string>`,
+                    content: `    ${lineContent}`,
                     type: 'add',
                     stringKey: key
                 })
@@ -558,8 +586,14 @@ export function mergeEntries(
 
 /**
  * Generate strings.xml content from entries map (for new files only)
+ * Uses rawLines when available to preserve source file comments
  */
-export function generateStringsXmlContent(entries: Map<string, string>, indent: string = '    ', comment?: string): string {
+export function generateStringsXmlContent(
+    entries: Map<string, string>,
+    indent: string = '    ',
+    comment?: string,
+    rawLines?: Map<string, string>
+): string {
     const lines: string[] = [
         '<?xml version="1.0" encoding="utf-8"?>',
         '<resources>'
@@ -571,8 +605,13 @@ export function generateStringsXmlContent(entries: Map<string, string>, indent: 
     }
 
     entries.forEach((value, name) => {
-        const escapedValue = escapeXmlValue(value)
-        lines.push(`${indent}<string name="${name}">${escapedValue}</string>`)
+        // Prefer rawLines if available (preserves source file comments)
+        if (rawLines && rawLines.has(name)) {
+            lines.push(`${indent}${rawLines.get(name)}`)
+        } else {
+            const escapedValue = escapeXmlValue(value)
+            lines.push(`${indent}<string name="${name}">${escapedValue}</string>`)
+        }
     })
 
     lines.push('</resources>')
@@ -632,11 +671,13 @@ function detectIndentation(content: string): string {
  * - Removes replaced entries from their original position
  * - Appends all new/updated entries at the end (before </resources>)
  * - Optionally adds a comment before the new entries
+ * - Uses rawLines when available to preserve source file comments
  */
 export function mergeIntoExistingXml(
     originalContent: string,
     sourceEntries: Map<string, string>,
-    comment?: string
+    comment?: string,
+    rawLines?: Map<string, string>
 ): string {
     const indent = detectIndentation(originalContent)
     const lines = originalContent.split('\n')
@@ -704,8 +745,13 @@ export function mergeIntoExistingXml(
     }
 
     entriesToAdd.forEach((value, name) => {
-        const escapedValue = escapeXmlValue(value)
-        newEntryLines.push(`${indent}<string name="${name}">${escapedValue}</string>`)
+        // Prefer rawLines if available (preserves source file comments)
+        if (rawLines && rawLines.has(name)) {
+            newEntryLines.push(`${indent}${rawLines.get(name)}`)
+        } else {
+            const escapedValue = escapeXmlValue(value)
+            newEntryLines.push(`${indent}<string name="${name}">${escapedValue}</string>`)
+        }
     })
 
     // Insert before </resources>
@@ -730,10 +776,13 @@ export async function writeStringsXml(
         throw new Error(`无法创建目录: ${folderName}`)
     }
 
+    // Normalize line endings to LF (avoid mixed line endings)
+    const normalizedContent = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
     // Create or overwrite strings.xml
     const fileHandle = await valuesDirHandle.getFileHandle('strings.xml', { create: true })
     const writable = await fileHandle.createWritable()
-    await writable.write(content)
+    await writable.write(normalizedContent)
     await writable.close()
 }
 
@@ -747,18 +796,19 @@ export async function executeMerge(
     comment?: string
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        const targetMap = new Map(targetResources.map(r => [r.locale, r]))
+        // Use folderName as key for matching (user may change targetFolder in mappings)
+        const targetMap = new Map(targetResources.map(r => [r.folderName, r]))
 
         for (const source of sourceResources) {
-            const target = targetMap.get(source.locale)
+            const target = targetMap.get(source.folderName)
 
             let content: string
             if (target && target.rawContent) {
-                // Merge into existing file, preserving formatting
-                content = mergeIntoExistingXml(target.rawContent, source.entries, comment)
+                // Merge into existing file, preserving formatting and source comments
+                content = mergeIntoExistingXml(target.rawContent, source.entries, comment, source.rawLines)
             } else {
-                // New file - generate from scratch
-                content = generateStringsXmlContent(source.entries, '    ', comment)
+                // New file - generate from scratch with rawLines if available
+                content = generateStringsXmlContent(source.entries, '    ', comment, source.rawLines)
             }
 
             await writeStringsXml(targetDirHandle, source.folderName, content)
