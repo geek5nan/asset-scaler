@@ -35,11 +35,25 @@ function Navigation() {
   )
 }
 
+const PAGE_TITLES: Record<string, string> = {
+  '/drawable': '图片资源',
+  '/string': '字符串资源',
+}
+
 function PageTracker() {
   const location = useLocation()
 
   useEffect(() => {
-    Analytics.pageView(location.pathname + location.search)
+    // Get title based on current path, default to 'ResBeaver'
+    const pageTitle = PAGE_TITLES[location.pathname]
+      ? `ResBeaver - ${PAGE_TITLES[location.pathname]}`
+      : 'ResBeaver'
+
+    // Update document title
+    document.title = pageTitle
+
+    // Send page view with title
+    Analytics.pageView(location.pathname + location.search, pageTitle)
   }, [location])
 
   return null

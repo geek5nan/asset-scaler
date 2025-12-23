@@ -124,22 +124,17 @@ export const Analytics = {
         trackEvent('string_navigate_diff', { direction }),
 
     /** Track page view */
-    pageView: (path: string) => {
+    pageView: (path: string, title?: string) => {
         const GA_ID = import.meta.env.VITE_GA_ID
-        // Debug log with masked ID for verification
-        const maskedId = GA_ID ? `${GA_ID.slice(0, 4)}***` : 'undefined'
-        console.log(`[Analytics] pageView triggered for: ${path}. GA_ID: ${maskedId}`)
 
         if (typeof window !== 'undefined' && window.gtag && GA_ID) {
             // Use explicit 'page_view' event for clearer tracking in SPAs
             window.gtag('event', 'page_view', {
                 page_path: path,
+                page_title: title,
                 page_location: window.location.href, // Also send full URL
                 send_to: GA_ID
             })
-            console.log('[Analytics] sent page_view event')
-        } else {
-            console.warn('[Analytics] Tracking failed: GA_ID or gtag is missing. Are you running locally without .env?')
         }
     },
 }
