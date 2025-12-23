@@ -1,9 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { FolderOpen, Loader2, Check, AlertCircle, MoreHorizontal, X, RotateCcw } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
+import { useState, useCallback, useEffect } from 'react'
+import { FolderOpen } from 'lucide-react'
 import {
     scanStringsFromDirectory,
     scanAllXmlFiles,
@@ -13,8 +9,8 @@ import {
     findAndroidResourceDirectories
 } from '@/lib/xmlUtils'
 import {
-    saveMappingConfig,
-    loadMappingConfig
+    loadMappingConfig,
+    saveMappingConfig
 } from '@/lib/localeMapping'
 import {
     LocaleResources,
@@ -22,15 +18,19 @@ import {
     SourceXmlFile,
     LocaleMapping,
     LocaleMappingConfig,
-    AndroidResourceDir
+    AndroidResourceDir,
+    OperationStatus
 } from '@/types'
-import { DiffPreview } from './DiffPreview'
-import { ModuleSelectorDialog } from './ModuleSelectorDialog'
-import { MappingList } from './MappingList'
 
-type OperationStatus = 'idle' | 'scanning' | 'ready' | 'merging' | 'success' | 'error'
-
-const MAX_VISIBLE_MODULES = 4
+// Import sub-components
+import { DiffPreview } from './string/DiffPreview'
+import { ModuleSelectorDialog } from './string/ModuleSelectorDialog'
+import { MappingList } from './string/MappingList'
+import { StringSidebar } from './string/StringSidebar'
+import { StatusBanners } from './string/StatusBanners'
+import { StringActionBar } from './string/StringActionBar'
+import { MappingEditorDialog } from './string/MappingEditorDialog'
+import { ImportConfirmationDialog } from './string/ImportConfirmationDialog'
 
 export function StringResourceProcessor() {
     // Project state
@@ -63,8 +63,6 @@ export function StringResourceProcessor() {
     const [importComment, setImportComment] = useState('')
     const [tempMappings, setTempMappings] = useState<LocaleMapping[]>([])
     const [focusIndex, setFocusIndex] = useState<number | null>(null)
-    const dialogListRef = useRef<HTMLDivElement>(null)
-    const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
     // Check if File System Access API is supported
     const isSupported = 'showDirectoryPicker' in window
@@ -89,22 +87,6 @@ export function StringResourceProcessor() {
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
     }, [showModuleDialog, showMappingDialog, showImportDialog])
-
-    // Scroll to and focus item in dialog
-    useEffect(() => {
-        if (showMappingDialog && focusIndex !== null && dialogListRef.current) {
-            const item = dialogListRef.current.children[focusIndex] as HTMLElement
-            if (item) {
-                item.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                // Focus the input after a short delay to allow for animation/rendering
-                setTimeout(() => {
-                    inputRefs.current[focusIndex]?.focus()
-                    // Select all text for easier editing
-                    inputRefs.current[focusIndex]?.select()
-                }, 100)
-            }
-        }
-    }, [showMappingDialog, focusIndex])
 
     // Update preview when data changes
     useEffect(() => {
@@ -234,16 +216,15 @@ export function StringResourceProcessor() {
         ))
     }, [])
 
-    // Update single mapping in temp state
-    const updateTempMapping = useCallback((index: number, updates: Partial<LocaleMapping>) => {
-        setTempMappings(prev => prev.map((m, i) =>
-            i === index ? { ...m, ...updates } : m
-        ))
-    }, [])
-
     const toggleTempMapping = useCallback((index: number) => {
         setTempMappings(prev => prev.map((m, i) =>
             i === index ? { ...m, enabled: !m.enabled } : m
+        ))
+    }, [])
+
+    const updateTempMapping = useCallback((index: number, updates: Partial<LocaleMapping>) => {
+        setTempMappings(prev => prev.map((m, i) =>
+            i === index ? { ...m, ...updates } : m
         ))
     }, [])
 
@@ -312,7 +293,6 @@ export function StringResourceProcessor() {
                     source.entries.forEach((value, key) => {
                         if (!target.entries.has(key)) {
                             filteredEntries.set(key, value)
-                            // Also filter rawLines to keep in sync
                             if (source.rawLines?.has(key)) {
                                 filteredRawLines.set(key, source.rawLines.get(key)!)
                             }
@@ -336,11 +316,7 @@ export function StringResourceProcessor() {
         }
     }, [targetDirHandle, sourceFiles, mappings, targetResources, replaceExisting])
 
-    // Get visible modules (for button group)
-    const visibleModules = discoveredResDirs.slice(0, MAX_VISIBLE_MODULES)
-    const hasMoreModules = discoveredResDirs.length > MAX_VISIBLE_MODULES
-
-    // Get enabled mappings and selected preview
+    // Get enabled mappings and data for summary
     const enabledMappings = mappings.filter(m => m.enabled)
     const totalSourceEntries = enabledMappings.reduce((sum, m) => sum + (m.entryCount || 0), 0)
     const selectedPreview = previewDetails.find(p => p.locale === selectedLocale) || null
@@ -351,7 +327,6 @@ export function StringResourceProcessor() {
         return (
             <div className="flex-1 flex items-center justify-center p-6">
                 <div className="text-center max-w-md">
-                    <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
                     <h2 className="text-lg font-semibold mb-2">浏览器不支持</h2>
                     <p className="text-muted-foreground">
                         File System Access API 仅支持 Chrome 和 Edge 浏览器。
@@ -363,118 +338,25 @@ export function StringResourceProcessor() {
 
     return (
         <div className="flex flex-1 overflow-hidden">
-            {/* Sidebar - Simplified */}
-            <aside className="w-[280px] border-r bg-white flex-shrink-0 overflow-y-auto">
-                <div className="p-6 space-y-6">
-                    {/* Project (Output) Section */}
-                    <div>
-                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                            项目 (输出)
-                        </h3>
-                        <Button
-                            variant="outline"
-                            className="w-full justify-start gap-2 h-10"
-                            onClick={selectProjectDir}
-                        >
-                            <FolderOpen className="h-4 w-4" />
-                            <span className="truncate">
-                                {projectRootName || '选择 Android 项目'}
-                            </span>
-                        </Button>
+            <StringSidebar
+                projectRootName={projectRootName}
+                discoveredResDirs={discoveredResDirs}
+                selectedResDir={selectedResDir}
+                sourceDirName={sourceDirHandle?.name || null}
+                sourceFileCount={sourceFiles.length}
+                totalSourceEntries={totalSourceEntries}
+                replaceExisting={replaceExisting}
+                onSelectProjectDir={selectProjectDir}
+                onSelectSourceDir={selectSourceDir}
+                onLoadResDirectory={loadResDirectory}
+                onShowModuleDialog={() => setShowModuleDialog(true)}
+                onSetReplaceExisting={setReplaceExisting}
+            />
 
-                        {/* Module Selection */}
-                        {discoveredResDirs.length > 1 && (
-                            <div className="mt-3">
-                                <Label className="text-xs text-muted-foreground mb-2 block">模块</Label>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {visibleModules.map(module => {
-                                        const isSelected = selectedResDir?.path === module.path
-                                        return (
-                                            <Button
-                                                key={module.path}
-                                                variant={isSelected ? 'default' : 'outline'}
-                                                size="sm"
-                                                className="h-7 text-xs px-2.5"
-                                                onClick={() => loadResDirectory(module)}
-                                            >
-                                                {module.name}
-                                            </Button>
-                                        )
-                                    })}
-                                    {hasMoreModules && (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-7 text-xs px-2"
-                                            onClick={() => setShowModuleDialog(true)}
-                                        >
-                                            <MoreHorizontal className="h-3.5 w-3.5" />
-                                        </Button>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="h-px bg-border" />
-
-                    {/* Source (Input) Section */}
-                    <div>
-                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                            字符串 (输入)
-                        </h3>
-                        <Button
-                            variant="outline"
-                            className="w-full justify-start gap-2 h-10"
-                            onClick={selectSourceDir}
-                        >
-                            <FolderOpen className="h-4 w-4" />
-                            <span className="truncate">
-                                {sourceDirHandle?.name || '选择翻译文件夹'}
-                            </span>
-                        </Button>
-
-                        {sourceFiles.length > 0 && (
-                            <p className="text-xs text-muted-foreground mt-2">
-                                {sourceFiles.length} 个文件, {totalSourceEntries} 条
-                            </p>
-                        )}
-                    </div>
-
-                    {/* Options Section */}
-                    {mappings.length > 0 && (
-                        <>
-                            <div className="h-px bg-border" />
-                            <div>
-                                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                                    合并选项
-                                </h3>
-                                <div className="flex items-center gap-2">
-                                    <Checkbox
-                                        id="replace-existing"
-                                        checked={replaceExisting}
-                                        onCheckedChange={(checked) => setReplaceExisting(!!checked)}
-                                    />
-                                    <Label htmlFor="replace-existing" className="text-sm cursor-pointer">
-                                        替换已有字段
-                                    </Label>
-                                </div>
-                                <p className="text-xs text-muted-foreground mt-1.5 ml-6">
-                                    {replaceExisting ? '将覆盖目标中已存在的 key' : '跳过目标中已存在的 key'}
-                                </p>
-                            </div>
-                        </>
-                    )}
-                </div>
-            </aside>
-
-            {/* Main Content - Side by Side Layout */}
             <main className="flex-1 flex flex-col overflow-hidden bg-slate-50">
-                {/* Content Area */}
                 <div className="flex-1 flex overflow-hidden p-6 gap-4">
                     {projectRootName && sourceDirHandle && mappings.length > 0 ? (
                         <>
-                            {/* Mapping List (Left Side) */}
                             <div className="w-[280px] flex-shrink-0">
                                 <MappingList
                                     mappings={mappings}
@@ -495,17 +377,13 @@ export function StringResourceProcessor() {
                                     }}
                                 />
                             </div>
-
-                            {/* Diff Preview (Right Side) */}
                             <DiffPreview preview={selectedPreview} />
                         </>
                     ) : (
                         <div className="flex-1 flex items-center justify-center">
                             <div className="text-center max-w-md">
                                 <FolderOpen className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                                <h2 className="text-lg font-medium text-slate-600 mb-2">
-                                    开始配置
-                                </h2>
+                                <h2 className="text-lg font-medium text-slate-600 mb-2">开始配置</h2>
                                 <p className="text-sm text-muted-foreground">
                                     {!projectRootName
                                         ? '首先选择 Android 项目目录'
@@ -519,48 +397,23 @@ export function StringResourceProcessor() {
                     )}
                 </div>
 
-                {/* Status Messages */}
-                {status === 'success' && (
-                    <div className="mx-6 mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
-                        <Check className="h-5 w-5 text-green-600" />
-                        <span className="text-green-700 font-medium">合并完成！文件已写入目标目录。</span>
-                    </div>
-                )}
+                <StatusBanners status={status} error={error} />
 
-                {error && (
-                    <div className="mx-6 mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
-                        <AlertCircle className="h-5 w-5 text-red-600" />
-                        <span className="text-red-700">{error}</span>
-                    </div>
-                )}
-
-                {/* Bottom Action Bar */}
                 {previewDetails.length > 0 && (
-                    <div className="flex-shrink-0 border-t bg-white px-6 py-3 flex items-center justify-between">
-                        <p className="text-sm text-muted-foreground">
-                            {previewDetails.length} 个语言 · +{totalAdd} 新增 · ~{totalUpdate} 更新
-                        </p>
-                        <Button
-                            onClick={() => {
-                                setImportComment('')
-                                setShowImportDialog(true)
-                            }}
-                            disabled={status === 'merging' || (totalAdd === 0 && totalUpdate === 0)}
-                        >
-                            {status === 'merging' ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    合并中...
-                                </>
-                            ) : (
-                                '开始导入'
-                            )}
-                        </Button>
-                    </div>
+                    <StringActionBar
+                        localeCount={previewDetails.length}
+                        totalAdd={totalAdd}
+                        totalUpdate={totalUpdate}
+                        isMerging={status === 'merging'}
+                        canImport={totalAdd > 0 || totalUpdate > 0}
+                        onOpenImportDialog={() => {
+                            setImportComment('')
+                            setShowImportDialog(true)
+                        }}
+                    />
                 )}
             </main>
 
-            {/* Module Selector Dialog */}
             <ModuleSelectorDialog
                 open={showModuleDialog}
                 onClose={() => setShowModuleDialog(false)}
@@ -569,150 +422,28 @@ export function StringResourceProcessor() {
                 onSelect={loadResDirectory}
             />
 
-            {/* Mapping Editor Dialog */}
-            {showMappingDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                    <div
-                        className="absolute inset-0 bg-black/50"
-                        onClick={() => setShowMappingDialog(false)}
-                    />
-                    <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
-                        <div className="px-6 py-4 border-b flex items-center justify-between">
-                            <h2 className="text-lg font-semibold">编辑导入规则</h2>
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-8 px-2 text-xs text-slate-500 hover:text-primary"
-                                    onClick={resetAllTempMappings}
-                                    title="恢复全部分配建议"
-                                >
-                                    <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                                    全部重置
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-8 w-8 p-0"
-                                    onClick={() => setShowMappingDialog(false)}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
-                        <div ref={dialogListRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-                            {tempMappings.map((m, idx) => (
-                                <div
-                                    key={m.sourceFileName}
-                                    className={`p-3 rounded-lg border transition-colors ${focusIndex === idx
-                                        ? 'border-primary/50 bg-primary/[0.03]'
-                                        : 'bg-slate-50 border-transparent'
-                                        }`}
-                                >
-                                    <div className="flex items-center gap-3 mb-2">
-                                        <Checkbox
-                                            checked={m.enabled}
-                                            onCheckedChange={() => toggleTempMapping(idx)}
-                                            className="h-4 w-4"
-                                        />
-                                        <span className="text-sm font-medium text-slate-700">
-                                            {m.sourceFileName}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 ml-7">
-                                        <Label className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">目标:</Label>
-                                        <Input
-                                            ref={el => inputRefs.current[idx] = el}
-                                            value={m.targetFolder}
-                                            onChange={(e) => updateTempMapping(idx, { targetFolder: e.target.value })}
-                                            onFocus={() => setFocusIndex(idx)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    saveMappings()
-                                                }
-                                            }}
-                                            className="h-9 text-sm font-mono flex-1 bg-white focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-slate-300"
-                                        />
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-9 w-9 p-0 text-slate-400 hover:text-primary"
-                                            onClick={() => resetTempMapping(idx)}
-                                            title="恢复建议值"
-                                        >
-                                            <RotateCcw className="h-3.5 w-3.5" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="px-6 py-4 border-t flex justify-end gap-3">
-                            <Button
-                                variant="outline"
-                                onClick={() => setShowMappingDialog(false)}
-                            >
-                                取消
-                            </Button>
-                            <Button onClick={saveMappings}>
-                                保存配置
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <MappingEditorDialog
+                open={showMappingDialog}
+                onClose={() => setShowMappingDialog(false)}
+                mappings={tempMappings}
+                focusIndex={focusIndex}
+                onToggle={toggleTempMapping}
+                onUpdate={updateTempMapping}
+                onResetOne={resetTempMapping}
+                onResetAll={resetAllTempMappings}
+                onSave={saveMappings}
+            />
 
-            {/* Import Confirmation Dialog */}
-            {showImportDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                    <div
-                        className="absolute inset-0 bg-black/50"
-                        onClick={() => setShowImportDialog(false)}
-                    />
-                    <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-                        <div className="px-6 py-4 border-b flex items-center justify-between">
-                            <h3 className="text-lg font-semibold">确认导入</h3>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => setShowImportDialog(false)}
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
-                        </div>
-                        <div className="px-6 py-4 space-y-4">
-                            <div className="text-sm text-muted-foreground">
-                                即将导入 {previewDetails.length} 个语言 · +{totalAdd} 新增 · ~{totalUpdate} 更新
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="import-comment">导入说明（可选）</Label>
-                                <Input
-                                    id="import-comment"
-                                    value={importComment}
-                                    onChange={(e) => setImportComment(e.target.value)}
-                                    placeholder={`Imported on ${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    这段说明将作为注释添加到导入条目之前
-                                </p>
-                            </div>
-                        </div>
-                        <div className="px-6 py-4 border-t flex justify-end gap-2">
-                            <Button
-                                variant="outline"
-                                onClick={() => setShowImportDialog(false)}
-                            >
-                                取消
-                            </Button>
-                            <Button
-                                onClick={() => handleMerge(importComment || undefined)}
-                            >
-                                确认导入
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ImportConfirmationDialog
+                open={showImportDialog}
+                onClose={() => setShowImportDialog(false)}
+                localeCount={previewDetails.length}
+                totalAdd={totalAdd}
+                totalUpdate={totalUpdate}
+                importComment={importComment}
+                onCommentChange={setImportComment}
+                onConfirm={handleMerge}
+            />
         </div>
     )
 }

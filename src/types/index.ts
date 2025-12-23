@@ -15,6 +15,20 @@ export interface ConvertConfig {
   selectedDensities: string[]
 }
 
+export interface ConvertedImage {
+  density: string
+  blob: Blob
+}
+
+export interface ProcessingFile extends ImageFile {
+  status: 'ready' | 'processing' | 'error'
+  progress: number
+  convertedImages?: ConvertedImage[]
+  error?: string
+  outputName: string
+  isEditing?: boolean
+}
+
 export interface XmlFile {
   id: string
   file: File
@@ -106,3 +120,5 @@ export interface SourceXmlFile {
   suggestedLocale: string
   suggestedFolder: string
 }
+
+export type OperationStatus = 'idle' | 'scanning' | 'ready' | 'merging' | 'success' | 'error'

@@ -10,12 +10,12 @@ function Navigation() {
   const location = useLocation()
 
   return (
-    <div className="flex gap-1 -mb-px">
+    <nav className="flex gap-1 h-full">
       <Link
         to="/drawable"
-        className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${location.pathname === '/drawable'
-          ? 'border-primary text-primary'
-          : 'border-transparent text-muted-foreground hover:text-foreground hover:border-slate-300'
+        className={`flex items-center gap-2 px-4 text-sm font-semibold border-b-2 transition-all ${location.pathname === '/drawable'
+          ? 'border-primary text-primary bg-primary/[0.03]'
+          : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-slate-50'
           }`}
       >
         <ImageIcon className="h-4 w-4" />
@@ -23,15 +23,15 @@ function Navigation() {
       </Link>
       <Link
         to="/string"
-        className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${location.pathname === '/string'
-          ? 'border-primary text-primary'
-          : 'border-transparent text-muted-foreground hover:text-foreground hover:border-slate-300'
+        className={`flex items-center gap-2 px-4 text-sm font-semibold border-b-2 transition-all ${location.pathname === '/string'
+          ? 'border-primary text-primary bg-primary/[0.03]'
+          : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-slate-50'
           }`}
       >
         <FileText className="h-4 w-4" />
         字符串资源
       </Link>
-    </div>
+    </nav>
   )
 }
 
@@ -124,12 +124,19 @@ function App() {
         )}
 
         {/* Header */}
-        <header className="border-b bg-white flex-shrink-0 z-10">
+        <header className="border-b bg-white flex-shrink-0 z-10 shadow-sm">
           <div className="max-w-[1600px] mx-auto px-6">
-            <div className="h-14 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Sparkles className="h-6 w-6 text-primary" />
-                <h1 className="text-xl font-bold">ResBeaver</h1>
+            <div className="h-14 flex items-center justify-between gap-8">
+              <div className="flex items-center gap-10 h-full">
+                <div className="flex items-center gap-2.5 mr-2">
+                  <div className="bg-primary/10 p-1.5 rounded-lg">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                  </div>
+                  <h1 className="text-lg font-bold tracking-tight bg-gradient-to-br from-slate-900 to-slate-600 bg-clip-text text-transparent">
+                    ResBeaver
+                  </h1>
+                </div>
+                <Navigation />
               </div>
               <Button
                 variant="ghost"
@@ -138,12 +145,11 @@ function App() {
                   setShowHelp(true)
                   Analytics.openHelp()
                 }}
-                className="h-8 w-8"
+                className="h-9 w-9 rounded-full bg-slate-100/50 hover:bg-slate-100"
               >
-                <HelpCircle className="h-5 w-5" />
+                <HelpCircle className="h-5 w-5 text-slate-600" />
               </Button>
             </div>
-            <Navigation />
           </div>
         </header>
 
