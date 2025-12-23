@@ -24,7 +24,6 @@ import {
 
 // Import sub-components
 import { DiffPreview } from './string/DiffPreview'
-import { ModuleSelectorDialog } from './string/ModuleSelectorDialog'
 import { MappingList } from './string/MappingList'
 import { StringSidebar } from './string/StringSidebar'
 import { StatusBanners } from './string/StatusBanners'
@@ -57,7 +56,6 @@ export function StringResourceProcessor() {
     // UI state
     const [status, setStatus] = useState<OperationStatus>('idle')
     const [error, setError] = useState<string | null>(null)
-    const [showModuleDialog, setShowModuleDialog] = useState(false)
     const [showMappingDialog, setShowMappingDialog] = useState(false)
     const [showImportDialog, setShowImportDialog] = useState(false)
     const [importComment, setImportComment] = useState('')
@@ -81,12 +79,11 @@ export function StringResourceProcessor() {
             if (e.key === 'Escape') {
                 if (showImportDialog) setShowImportDialog(false)
                 else if (showMappingDialog) setShowMappingDialog(false)
-                else if (showModuleDialog) setShowModuleDialog(false)
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [showModuleDialog, showMappingDialog, showImportDialog])
+    }, [showMappingDialog, showImportDialog])
 
     // Update preview when data changes
     useEffect(() => {
@@ -349,7 +346,6 @@ export function StringResourceProcessor() {
                 onSelectProjectDir={selectProjectDir}
                 onSelectSourceDir={selectSourceDir}
                 onLoadResDirectory={loadResDirectory}
-                onShowModuleDialog={() => setShowModuleDialog(true)}
                 onReplaceExistingChange={setReplaceExisting}
             />
 
@@ -414,13 +410,6 @@ export function StringResourceProcessor() {
                 )}
             </main>
 
-            <ModuleSelectorDialog
-                open={showModuleDialog}
-                onClose={() => setShowModuleDialog(false)}
-                modules={discoveredResDirs}
-                selectedModule={selectedResDir}
-                onSelect={loadResDirectory}
-            />
 
             <MappingEditorDialog
                 open={showMappingDialog}
