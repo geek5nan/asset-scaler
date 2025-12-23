@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { FolderOpen, Loader2, Check, AlertCircle, MoreHorizontal, X } from 'lucide-react'
+import { FolderOpen, Loader2, Check, AlertCircle, MoreHorizontal, X, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -61,8 +61,10 @@ export function StringResourceProcessor() {
     const [showMappingDialog, setShowMappingDialog] = useState(false)
     const [showImportDialog, setShowImportDialog] = useState(false)
     const [importComment, setImportComment] = useState('')
+    const [tempMappings, setTempMappings] = useState<LocaleMapping[]>([])
     const [focusIndex, setFocusIndex] = useState<number | null>(null)
     const dialogListRef = useRef<HTMLDivElement>(null)
+    const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
     // Check if File System Access API is supported
     const isSupported = 'showDirectoryPicker' in window
@@ -88,12 +90,18 @@ export function StringResourceProcessor() {
         return () => window.removeEventListener('keydown', handleKeyDown)
     }, [showModuleDialog, showMappingDialog, showImportDialog])
 
-    // Scroll to focused item in dialog
+    // Scroll to and focus item in dialog
     useEffect(() => {
         if (showMappingDialog && focusIndex !== null && dialogListRef.current) {
             const item = dialogListRef.current.children[focusIndex] as HTMLElement
             if (item) {
                 item.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                // Focus the input after a short delay to allow for animation/rendering
+                setTimeout(() => {
+                    inputRefs.current[focusIndex]?.focus()
+                    // Select all text for easier editing
+                    inputRefs.current[focusIndex]?.select()
+                }, 100)
             }
         }
     }, [showMappingDialog, focusIndex])
@@ -226,12 +234,58 @@ export function StringResourceProcessor() {
         ))
     }, [])
 
-    // Update single mapping
-    const updateMapping = useCallback((index: number, updates: Partial<LocaleMapping>) => {
-        setMappings(prev => prev.map((m, i) =>
+    // Update single mapping in temp state
+    const updateTempMapping = useCallback((index: number, updates: Partial<LocaleMapping>) => {
+        setTempMappings(prev => prev.map((m, i) =>
             i === index ? { ...m, ...updates } : m
         ))
     }, [])
+
+    const toggleTempMapping = useCallback((index: number) => {
+        setTempMappings(prev => prev.map((m, i) =>
+            i === index ? { ...m, enabled: !m.enabled } : m
+        ))
+    }, [])
+
+    const saveMappings = useCallback(() => {
+        setMappings(tempMappings)
+        setShowMappingDialog(false)
+    }, [tempMappings])
+
+    // Reset a single mapping to its initial suggested values
+    const resetTempMapping = useCallback((index: number) => {
+        setTempMappings(prev => {
+            const m = prev[index]
+            const sourceFile = sourceFiles.find(f => f.fileName === m.sourceFileName)
+            if (sourceFile) {
+                return prev.map((item, i) =>
+                    i === index ? {
+                        ...item,
+                        targetFolder: sourceFile.suggestedFolder,
+                        locale: sourceFile.suggestedLocale,
+                        enabled: true
+                    } : item
+                )
+            }
+            return prev
+        })
+    }, [sourceFiles])
+
+    // Reset all mappings to initial suggested values
+    const resetAllTempMappings = useCallback(() => {
+        setTempMappings(prev => prev.map(m => {
+            const sourceFile = sourceFiles.find(f => f.fileName === m.sourceFileName)
+            if (sourceFile) {
+                return {
+                    ...m,
+                    targetFolder: sourceFile.suggestedFolder,
+                    locale: sourceFile.suggestedLocale,
+                    enabled: true
+                }
+            }
+            return m
+        }))
+    }, [sourceFiles])
 
     // Handle import mappings
     const handleImportMappings = useCallback((config: LocaleMappingConfig) => {
@@ -430,10 +484,12 @@ export function StringResourceProcessor() {
                                     onSelectLocale={setSelectedLocale}
                                     onImportMappings={handleImportMappings}
                                     onOpenSettings={() => {
+                                        setTempMappings([...mappings])
                                         setFocusIndex(null)
                                         setShowMappingDialog(true)
                                     }}
                                     onEditItem={(index) => {
+                                        setTempMappings([...mappings])
                                         setFocusIndex(index)
                                         setShowMappingDialog(true)
                                     }}
@@ -523,46 +579,82 @@ export function StringResourceProcessor() {
                     <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
                         <div className="px-6 py-4 border-b flex items-center justify-between">
                             <h2 className="text-lg font-semibold">编辑导入规则</h2>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                onClick={() => setShowMappingDialog(false)}
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 px-2 text-xs text-slate-500 hover:text-primary"
+                                    onClick={resetAllTempMappings}
+                                    title="恢复全部分配建议"
+                                >
+                                    <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                                    全部重置
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                    onClick={() => setShowMappingDialog(false)}
+                                >
+                                    <X className="h-4 w-4" />
+                                </Button>
+                            </div>
                         </div>
                         <div ref={dialogListRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-                            {mappings.map((m, idx) => (
+                            {tempMappings.map((m, idx) => (
                                 <div
                                     key={m.sourceFileName}
-                                    className={`p-3 rounded-lg border ${focusIndex === idx ? 'ring-2 ring-primary bg-primary/5' : 'bg-slate-50'
+                                    className={`p-3 rounded-lg border transition-colors ${focusIndex === idx
+                                        ? 'border-primary/50 bg-primary/[0.03]'
+                                        : 'bg-slate-50 border-transparent'
                                         }`}
                                 >
                                     <div className="flex items-center gap-3 mb-2">
                                         <Checkbox
                                             checked={m.enabled}
-                                            onCheckedChange={() => toggleMapping(idx)}
+                                            onCheckedChange={() => toggleTempMapping(idx)}
                                             className="h-4 w-4"
                                         />
-                                        <span className="text-sm text-slate-600">
+                                        <span className="text-sm font-medium text-slate-700">
                                             {m.sourceFileName}
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2 ml-7">
-                                        <Label className="text-xs text-slate-500">目标:</Label>
+                                        <Label className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">目标:</Label>
                                         <Input
+                                            ref={el => inputRefs.current[idx] = el}
                                             value={m.targetFolder}
-                                            onChange={(e) => updateMapping(idx, { targetFolder: e.target.value })}
-                                            className="h-8 text-sm font-mono flex-1"
+                                            onChange={(e) => updateTempMapping(idx, { targetFolder: e.target.value })}
+                                            onFocus={() => setFocusIndex(idx)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    saveMappings()
+                                                }
+                                            }}
+                                            className="h-9 text-sm font-mono flex-1 bg-white focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-slate-300"
                                         />
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-9 w-9 p-0 text-slate-400 hover:text-primary"
+                                            onClick={() => resetTempMapping(idx)}
+                                            title="恢复建议值"
+                                        >
+                                            <RotateCcw className="h-3.5 w-3.5" />
+                                        </Button>
                                     </div>
                                 </div>
                             ))}
                         </div>
-                        <div className="px-6 py-4 border-t flex justify-end">
-                            <Button onClick={() => setShowMappingDialog(false)}>
-                                完成
+                        <div className="px-6 py-4 border-t flex justify-end gap-3">
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowMappingDialog(false)}
+                            >
+                                取消
+                            </Button>
+                            <Button onClick={saveMappings}>
+                                保存配置
                             </Button>
                         </div>
                     </div>
