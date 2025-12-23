@@ -184,8 +184,15 @@ export function DrawableProcessor() {
                             const canvas = resizeImage(img, width, height)
                             const webpBlob = await canvasToWebP(canvas, config.quality, config.lossless)
 
-                            const folderName = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
-                            convertedImages.push({ density: folderName, blob: webpBlob })
+                            // 1. Add normal folder
+                            const normalFolder = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
+                            convertedImages.push({ density: normalFolder, blob: webpBlob })
+
+                            // 2. Add night folder if enabled
+                            if (config.nightMode) {
+                                const nightFolder = densityName === 'drawable' ? 'drawable-night' : `drawable-night-${densityName}`
+                                convertedImages.push({ density: nightFolder, blob: webpBlob })
+                            }
 
                             currentStep++
                             setFiles(prev => prev.map(f =>
@@ -260,8 +267,15 @@ export function DrawableProcessor() {
                                 const height = Math.round(file.height * density.scale)
                                 const canvas = resizeImage(img, width, height)
                                 const webpBlob = await canvasToWebP(canvas, config.quality, config.lossless)
-                                const folderName = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
-                                convertedImages.push({ density: folderName, blob: webpBlob })
+                                // 1. Add normal folder
+                                const normalFolder = densityName === 'drawable' ? 'drawable' : `drawable-${densityName}`
+                                convertedImages.push({ density: normalFolder, blob: webpBlob })
+
+                                // 2. Add night folder if enabled
+                                if (config.nightMode) {
+                                    const nightFolder = densityName === 'drawable' ? 'drawable-night' : `drawable-night-${densityName}`
+                                    convertedImages.push({ density: nightFolder, blob: webpBlob })
+                                }
                             }
                             resolve()
                         } catch (error) { reject(error) }

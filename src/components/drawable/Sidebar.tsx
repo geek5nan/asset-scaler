@@ -149,6 +149,27 @@ export function Sidebar({ config, onChange }: SidebarProps) {
                 <div>
                     <Label className="text-sm font-medium mb-3 block">输出目录</Label>
                     <div className="space-y-2">
+                        <div className="pb-3 mb-3 border-b">
+                            <div className="flex items-center space-x-2">
+                                <Checkbox
+                                    id="night-mode"
+                                    checked={config.nightMode}
+                                    onCheckedChange={(checked) => {
+                                        onChange({ ...config, nightMode: !!checked })
+                                        Analytics.toggleNightMode(!!checked)
+                                    }}
+                                />
+                                <Label htmlFor="night-mode" className="text-sm cursor-pointer flex-1">
+                                    暗黑模式目录
+                                    <span className="text-xs text-muted-foreground ml-2">(drawable-night-*)</span>
+                                </Label>
+                            </div>
+                            {config.nightMode && (
+                                <p className="text-[10px] text-muted-foreground mt-1 ml-6">
+                                    将会为所有选中的目录生成对应的 night 目录
+                                </p>
+                            )}
+                        </div>
                         {[
                             { key: 'mdpi', label: 'drawable-mdpi', desc: '1x' },
                             { key: 'hdpi', label: 'drawable-hdpi', desc: '1.5x' },

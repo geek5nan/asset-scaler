@@ -28,5 +28,6 @@ export function getDefaultConfig(): ConvertConfig {
     quality: 75,
     lossless: false,
     selectedDensities: ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi'],
+    nightMode: false,
   }
 }

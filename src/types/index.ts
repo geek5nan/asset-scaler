@@ -13,6 +13,7 @@ export interface ConvertConfig {
   quality: number
   lossless: boolean
   selectedDensities: string[]
+  nightMode: boolean
 }
 
 export interface ConvertedImage {

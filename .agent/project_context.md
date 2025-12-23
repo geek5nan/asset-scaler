@@ -2,7 +2,7 @@
 
 ## Project Overview
 **ResBeaver** is a web-based productivity tool designed for Android developers to manage resource migration and processing. It currently consists of two primary modules:
-1.  **Drawable Processor**: Handles image scaling, conversion (to WebP/PNG), and automatic distribution into Android `drawable-*` density folders.
+1.  **Drawable Processor**: Handles image scaling, conversion (to WebP/PNG), and automatic distribution into Android `drawable-*` density folders. Supports **Dark Mode Directory** generation (dual export of standard and `drawable-night-*` folders).
 2.  **String Resource Processor**: Handles XML string resource merging, translation import, and multi-locale management with a focus on preserving file structure and comments.
 
 ## Tech Stack

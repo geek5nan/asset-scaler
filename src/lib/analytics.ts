@@ -67,6 +67,12 @@ export const Analytics = {
             enabled,
         }),
 
+    /** User toggled night mode for drawable folders */
+    toggleNightMode: (enabled: boolean) =>
+        trackEvent('toggle_night_mode', {
+            enabled,
+        }),
+
     /** User renamed a file */
     renameFile: () => trackEvent('rename_file'),
 
