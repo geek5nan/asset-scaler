@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo.png" alt="ResBeaver Logo" width="200">
+</p>
+
 # ResBeaver (切图生成器)
 
 Android 资源管理大师 - 图片多密度转换与字符串资源一键合并。
