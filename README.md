@@ -3,6 +3,7 @@
 Multi-density asset generator for Android.
 
 🌐 **Live Demo**: [asset-scaler.pages.dev](https://asset-scaler.pages.dev)
+📄 **AI Context**: [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) (详细的项目技术背景与逻辑说明)
 
 ## 使用说明
 
