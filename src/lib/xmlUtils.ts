@@ -234,17 +234,20 @@ export async function scanAllXmlFiles(
 
 /**
  * Convert source files to LocaleResources using mapping rules
+ * Returns results in the same order as mappings (important for UI display order)
  */
 export function applyMappingToSources(
     sourceFiles: SourceXmlFile[],
     mappings: LocaleMapping[]
 ): LocaleResources[] {
-    const mappingMap = new Map(mappings.map(m => [m.sourceFileName, m]))
+    const sourceFileMap = new Map(sourceFiles.map(f => [f.fileName, f]))
     const results: LocaleResources[] = []
 
-    for (const source of sourceFiles) {
-        const mapping = mappingMap.get(source.fileName)
-        if (mapping && mapping.enabled) {
+    for (const mapping of mappings) {
+        if (!mapping.enabled) continue
+
+        const source = sourceFileMap.get(mapping.sourceFileName)
+        if (source) {
             results.push({
                 locale: mapping.locale,
                 folderName: mapping.targetFolder,
@@ -793,21 +796,35 @@ export async function executeMerge(
     targetDirHandle: FileSystemDirectoryHandle,
     sourceResources: LocaleResources[],
     targetResources: LocaleResources[],
-    comment?: string
+    comment?: string,
+    onProgress?: (current: number, total: number, fileName: string) => void
 ): Promise<{ success: boolean; error?: string }> {
     try {
         // Use folderName as key for matching (user may change targetFolder in mappings)
         const targetMap = new Map(targetResources.map(r => [r.folderName, r]))
 
-        for (const source of sourceResources) {
+        for (let i = 0; i < sourceResources.length; i++) {
+            const source = sourceResources[i]
+
+            // Report progress
+            onProgress?.(i + 1, sourceResources.length, source.folderName)
+
             const target = targetMap.get(source.folderName)
 
             let content: string
             if (target && target.rawContent) {
+                // Check if there are any actual changes (new or updated entries)
+                const hasChanges = Array.from(source.entries.keys()).some(key => {
+                    return !target.entries.has(key) || target.entries.get(key) !== source.entries.get(key)
+                })
+
+                // Only pass comment if there are actual changes
+                const commentToUse = hasChanges ? comment : undefined
+
                 // Merge into existing file, preserving formatting and source comments
-                content = mergeIntoExistingXml(target.rawContent, source.entries, comment, source.rawLines)
+                content = mergeIntoExistingXml(target.rawContent, source.entries, commentToUse, source.rawLines)
             } else {
-                // New file - generate from scratch with rawLines if available
+                // New file - always use comment since all entries are new
                 content = generateStringsXmlContent(source.entries, '    ', comment, source.rawLines)
             }
 

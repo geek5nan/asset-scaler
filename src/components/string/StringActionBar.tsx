@@ -1,11 +1,10 @@
-import { Loader2, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface StringActionBarProps {
     localeCount: number
     totalAdd: number
     totalUpdate: number
-    isMerging: boolean
     canImport: boolean
     canRefresh: boolean
     onOpenImportDialog: () => void
@@ -16,7 +15,6 @@ export function StringActionBar({
     localeCount,
     totalAdd,
     totalUpdate,
-    isMerging,
     canImport,
     canRefresh,
     onOpenImportDialog,
@@ -42,16 +40,9 @@ export function StringActionBar({
             </div>
             <Button
                 onClick={onOpenImportDialog}
-                disabled={isMerging || !canImport}
+                disabled={!canImport}
             >
-                {isMerging ? (
-                    <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        合并中...
-                    </>
-                ) : (
-                    '开始导入'
-                )}
+                开始导入
             </Button>
         </div>
     )

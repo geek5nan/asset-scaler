@@ -3,7 +3,7 @@
  * Handles saving, loading, and exporting mapping rules
  */
 
-import { LocaleMapping, LocaleMappingConfig } from '@/types'
+import { LocaleMapping, LocaleMappingConfig, SourceXmlFile } from '@/types'
 
 const STORAGE_KEY = 'resbeaver-locale-mapping'
 
@@ -82,6 +82,41 @@ export function saveMappingConfig(config: LocaleMappingConfig): void {
     } catch (error) {
         console.error('Failed to save mapping config:', error)
     }
+}
+
+/**
+ * Sort mappings by target folder (locale) for consistent display order
+ */
+export function sortMappingsByTargetFolder(mappings: LocaleMapping[]): LocaleMapping[] {
+    return [...mappings].sort((a, b) => a.targetFolder.localeCompare(b.targetFolder))
+}
+
+/**
+ * Generate mappings from source files, preserving existing mapping rules where possible
+ */
+export function generateMappingsFromFiles(
+    sourceFiles: SourceXmlFile[],
+    existingMappings: LocaleMapping[] = []
+): LocaleMapping[] {
+    const existingMap = new Map(existingMappings.map(m => [m.sourceFileName, m]))
+
+    const newMappings = sourceFiles.map(f => {
+        const existing = existingMap.get(f.fileName)
+        if (existing) {
+            // Preserve existing rule, but update entryCount
+            return { ...existing, entryCount: f.entries.size }
+        }
+        // Generate new mapping for new source file
+        return {
+            sourceFileName: f.fileName,
+            targetFolder: f.suggestedFolder,
+            locale: f.suggestedLocale,
+            enabled: true,
+            entryCount: f.entries.size
+        }
+    })
+
+    return sortMappingsByTargetFolder(newMappings)
 }
 
 /**

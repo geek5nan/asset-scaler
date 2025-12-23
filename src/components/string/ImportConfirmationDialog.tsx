@@ -2,6 +2,7 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Progress } from '@/components/ui/progress'
 
 interface ImportConfirmationDialogProps {
     open: boolean
@@ -10,8 +11,12 @@ interface ImportConfirmationDialogProps {
     totalAdd: number
     totalUpdate: number
     importComment: string
+    isImporting: boolean
+    importCompleted: boolean
+    importProgress: { current: number; total: number; fileName: string }
     onCommentChange: (comment: string) => void
     onConfirm: (comment: string) => void
+    onConfirmCompletion: () => void
 }
 
 export function ImportConfirmationDialog({
@@ -21,8 +26,12 @@ export function ImportConfirmationDialog({
     totalAdd,
     totalUpdate,
     importComment,
+    isImporting,
+    importCompleted,
+    importProgress,
     onCommentChange,
-    onConfirm
+    onConfirm,
+    onConfirmCompletion
 }: ImportConfirmationDialogProps) {
     if (!open) return null
 
@@ -60,12 +69,36 @@ export function ImportConfirmationDialog({
                             这段说明将作为注释添加到导入条目之前
                         </p>
                     </div>
+
+                    {isImporting && (
+                        <div className="space-y-2 pt-2 border-t">
+                            {importProgress.current < importProgress.total ? (
+                                <>
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-muted-foreground">正在处理: {importProgress.fileName}</span>
+                                        <span className="font-medium">{importProgress.current} / {importProgress.total}</span>
+                                    </div>
+                                    <Progress value={(importProgress.current / importProgress.total) * 100} />
+                                </>
+                            ) : (
+                                <div className="flex items-center justify-center text-sm font-medium text-green-600 py-2">
+                                    ✓ 导入完成
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
                 <div className="px-6 py-4 border-t flex justify-end gap-2">
-                    <Button variant="outline" onClick={onClose}>取消</Button>
-                    <Button onClick={() => onConfirm(importComment || undefined as unknown as string)}>
-                        确认导入
-                    </Button>
+                    {!importCompleted && (
+                        <Button variant="outline" onClick={onClose} disabled={isImporting}>取消</Button>
+                    )}
+                    {importCompleted ? (
+                        <Button onClick={onConfirmCompletion}>确认</Button>
+                    ) : (
+                        <Button onClick={() => onConfirm(importComment || undefined as unknown as string)} disabled={isImporting}>
+                            {isImporting ? '导入中...' : '确认导入'}
+                        </Button>
+                    )}
                 </div>
             </div>
         </div>

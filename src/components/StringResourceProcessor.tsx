@@ -10,7 +10,8 @@ import {
 } from '@/lib/xmlUtils'
 import {
     loadMappingConfig,
-    saveMappingConfig
+    saveMappingConfig,
+    generateMappingsFromFiles
 } from '@/lib/localeMapping'
 import {
     LocaleResources,
@@ -60,6 +61,8 @@ export function StringResourceProcessor() {
     const [showMappingDialog, setShowMappingDialog] = useState(false)
     const [showImportDialog, setShowImportDialog] = useState(false)
     const [importComment, setImportComment] = useState('')
+    const [importProgress, setImportProgress] = useState({ current: 0, total: 0, fileName: '' })
+    const [importCompleted, setImportCompleted] = useState(false)
     const [tempMappings, setTempMappings] = useState<LocaleMapping[]>([])
     const [focusIndex, setFocusIndex] = useState<number | null>(null)
 
@@ -78,8 +81,16 @@ export function StringResourceProcessor() {
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
-                if (showImportDialog) setShowImportDialog(false)
-                else if (showMappingDialog) setShowMappingDialog(false)
+                if (showImportDialog) {
+                    // If import completed, use the confirm handler to refresh
+                    if (importCompleted) {
+                        handleImportConfirm()
+                    } else if (status !== 'merging') {
+                        setShowImportDialog(false)
+                    }
+                } else if (showMappingDialog) {
+                    setShowMappingDialog(false)
+                }
             }
         }
         window.addEventListener('keydown', handleKeyDown)
@@ -92,18 +103,12 @@ export function StringResourceProcessor() {
             const sourceResources = applyMappingToSources(sourceFiles, mappings)
             const preview = generateMergePreviewWithDetails(sourceResources, targetResources, replaceExisting)
 
-            // Sort preview by locale to ensure consistent ordering (values before values-ar, etc.)
-            preview.sort((a, b) => a.locale.localeCompare(b.locale))
-
             setPreviewDetails(preview)
 
-            // Auto-select first locale with changes (or first locale if none have changes)
+            // Auto-select first locale (alphabetically) if current selection is invalid
             const isValidSelection = selectedLocale && preview.some(p => p.locale === selectedLocale)
             if (!isValidSelection && preview.length > 0) {
-                // Find first locale with actual changes (addCount or overwriteCount > 0)
-                const firstWithChanges = preview.find(p => p.addCount > 0 || p.overwriteCount > 0)
-                const localeToSelect = firstWithChanges ? firstWithChanges.locale : preview[0].locale
-                setSelectedLocale(localeToSelect)
+                setSelectedLocale(preview[0].locale)
                 setGlobalChangeIndex(0)
             }
 
@@ -180,27 +185,8 @@ export function StringResourceProcessor() {
             const files = await scanAllXmlFiles(handle)
             setSourceFiles(files)
 
-            // Generate initial mappings from files, preserving existing rules where possible
-            const existingMappingMap = new Map(mappings.map(m => [m.sourceFileName, m]))
-
-            const newMappings: LocaleMapping[] = files.map(f => {
-                // Try to find existing mapping for this source file
-                const existing = existingMappingMap.get(f.fileName)
-                if (existing) {
-                    // Preserve existing rule, but update entryCount
-                    return { ...existing, entryCount: f.entries.size }
-                }
-                // Generate new mapping for new source file
-                return {
-                    sourceFileName: f.fileName,
-                    targetFolder: f.suggestedFolder,
-                    locale: f.suggestedLocale,
-                    enabled: true,
-                    entryCount: f.entries.size
-                }
-            })
-            // Sort by targetFolder for better organization
-            newMappings.sort((a, b) => a.targetFolder.localeCompare(b.targetFolder))
+            // Generate mappings from files, preserving existing rules
+            const newMappings = generateMappingsFromFiles(files, mappings)
             setMappings(newMappings)
 
             if (targetDirHandle) {
@@ -236,22 +222,7 @@ export function StringResourceProcessor() {
                 setSourceFiles(files)
 
                 // Update mappings with new entry counts
-                const existingMappingMap = new Map(mappings.map(m => [m.sourceFileName, m]))
-                const updatedMappings: LocaleMapping[] = files.map(f => {
-                    const existing = existingMappingMap.get(f.fileName)
-                    if (existing) {
-                        return { ...existing, entryCount: f.entries.size }
-                    }
-                    return {
-                        sourceFileName: f.fileName,
-                        targetFolder: f.suggestedFolder,
-                        locale: f.suggestedLocale,
-                        enabled: true,
-                        entryCount: f.entries.size
-                    }
-                })
-                // Sort by targetFolder to maintain consistent ordering
-                updatedMappings.sort((a, b) => a.targetFolder.localeCompare(b.targetFolder))
+                const updatedMappings = generateMappingsFromFiles(files, mappings)
                 setMappings(updatedMappings)
             }
 
@@ -330,7 +301,6 @@ export function StringResourceProcessor() {
     const handleMerge = useCallback(async (comment?: string) => {
         if (!targetDirHandle || sourceFiles.length === 0) return
 
-        setShowImportDialog(false)
         setStatus('merging')
         setError(null)
 
@@ -357,17 +327,37 @@ export function StringResourceProcessor() {
             })
         }
 
-        const result = await executeMerge(targetDirHandle, sourceResources, targetResources, comment)
+        const result = await executeMerge(
+            targetDirHandle,
+            sourceResources,
+            targetResources,
+            comment,
+            (current, total, fileName) => {
+                setImportProgress({ current, total, fileName })
+            }
+        )
 
         if (result.success) {
-            setStatus('success')
-            const updated = await scanStringsFromDirectory(targetDirHandle)
-            setTargetResources(updated)
+            // Set completion state, wait for user to click confirm
+            setImportCompleted(true)
         } else {
             setError(result.error || '合并失败')
             setStatus('error')
         }
     }, [targetDirHandle, sourceFiles, mappings, targetResources, replaceExisting])
+
+    // Handle import completion confirmation
+    const handleImportConfirm = useCallback(async () => {
+        if (!targetDirHandle) return
+
+        setShowImportDialog(false)
+        setImportCompleted(false)
+        setStatus('success')
+
+        // Refresh target resources
+        const updated = await scanStringsFromDirectory(targetDirHandle)
+        setTargetResources(updated)
+    }, [targetDirHandle])
 
     // Get enabled mappings and data for summary
     const enabledMappings = mappings.filter(m => m.enabled)
@@ -564,13 +554,17 @@ export function StringResourceProcessor() {
 
             <ImportConfirmationDialog
                 open={showImportDialog}
-                onClose={() => setShowImportDialog(false)}
+                onClose={importCompleted ? handleImportConfirm : () => setShowImportDialog(false)}
                 localeCount={previewDetails.length}
                 totalAdd={totalAdd}
                 totalUpdate={totalUpdate}
                 importComment={importComment}
+                isImporting={status === 'merging'}
+                importCompleted={importCompleted}
+                importProgress={importProgress}
                 onCommentChange={setImportComment}
                 onConfirm={handleMerge}
+                onConfirmCompletion={handleImportConfirm}
             />
         </div>
     )
