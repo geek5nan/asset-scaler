@@ -77,26 +77,6 @@ export function StringResourceProcessor() {
         }
     }, [])
 
-    // Handle ESC key to close dialogs
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                if (showImportDialog) {
-                    // If import completed, use the confirm handler to refresh
-                    if (importCompleted) {
-                        handleImportConfirm()
-                    } else if (status !== 'merging') {
-                        setShowImportDialog(false)
-                    }
-                } else if (showMappingDialog) {
-                    setShowMappingDialog(false)
-                }
-            }
-        }
-        window.addEventListener('keydown', handleKeyDown)
-        return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [showMappingDialog, showImportDialog])
-
     // Update preview when data changes
     useEffect(() => {
         if (sourceFiles.length > 0 && mappings.length > 0 && targetDirHandle) {
@@ -359,6 +339,26 @@ export function StringResourceProcessor() {
         setTargetResources(updated)
     }, [targetDirHandle])
 
+    // Handle ESC key to close dialogs
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (showImportDialog) {
+                    // If import completed, use the confirm handler to refresh
+                    if (importCompleted) {
+                        handleImportConfirm()
+                    } else if (status !== 'merging') {
+                        setShowImportDialog(false)
+                    }
+                } else if (showMappingDialog) {
+                    setShowMappingDialog(false)
+                }
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [showMappingDialog, showImportDialog, importCompleted, status, handleImportConfirm])
+
     // Get enabled mappings and data for summary
     const enabledMappings = mappings.filter(m => m.enabled)
     const totalSourceEntries = enabledMappings.reduce((sum, m) => sum + (m.entryCount || 0), 0)
@@ -527,7 +527,6 @@ export function StringResourceProcessor() {
                         localeCount={previewDetails.length}
                         totalAdd={totalAdd}
                         totalUpdate={totalUpdate}
-                        isMerging={status === 'merging'}
                         canImport={totalAdd > 0 || totalUpdate > 0}
                         canRefresh={!!(targetDirHandle || sourceDirHandle)}
                         onOpenImportDialog={() => {
