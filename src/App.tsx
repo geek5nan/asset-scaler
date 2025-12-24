@@ -185,7 +185,7 @@ function App() {
                     <section>
                       <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
                         <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs">1</span>
-                        {t('string.help.workflow')}
+                        {t('string.help.workflow.title')}
                       </h3>
                       <ol className="space-y-3 text-slate-600 leading-relaxed font-medium">
                         <li className="flex gap-3">

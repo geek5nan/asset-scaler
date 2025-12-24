@@ -150,22 +150,24 @@
         "step1Desc": "First, select the Android project directory",
         "step2Desc": "Then, select the directory containing the translation files",
         "help": {
-            "workflow": "Workflow",
-            "step1": {
-                "bold": "Select Project",
-                "text": ": Point to the Android project root directory (auto-identifies modules)."
-            },
-            "step2": {
-                "bold": "Select Translation",
-                "text": ": Select the folder containing translation resources (auto-detects Locale from filenames)."
-            },
-            "step3": {
-                "bold": "Diff Preview",
-                "text": ": Switch between preview lists to view line-by-line Diff in real-time."
-            },
-            "step4": {
-                "bold": "Safe Import",
-                "text": ": Click 'Start Import', ResBeaver will intelligently merge strings and write directly to disk."
+            "workflow": {
+                "title": "Workflow",
+                "step1": {
+                    "bold": "Select Project",
+                    "text": ": Point to the Android project root directory (auto-identifies modules)."
+                },
+                "step2": {
+                    "bold": "Select Translation",
+                    "text": ": Select the folder containing translation resources (auto-detects Locale from filenames)."
+                },
+                "step3": {
+                    "bold": "Diff Preview",
+                    "text": ": Switch between preview lists to view line-by-line Diff in real-time."
+                },
+                "step4": {
+                    "bold": "Safe Import",
+                    "text": ": Click 'Start Import', ResBeaver will intelligently merge strings and write directly to disk."
+                }
             },
             "advanced": {
                 "title": "🛠️ Advanced Features",

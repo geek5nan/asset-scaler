@@ -150,22 +150,24 @@
         "step1Desc": "首先选择 Android 项目目录",
         "step2Desc": "然后选择包含翻译文件的目录",
         "help": {
-            "workflow": "操作流程",
-            "step1": {
-                "bold": "选择项目",
-                "text": ": 指向 Android 工程根目录（自动识别模块）。"
-            },
-            "step2": {
-                "bold": "选择翻译",
-                "text": ": 选择包含翻译资源的文件夹（支持识别文件名中的 Locale）。"
-            },
-            "step3": {
-                "bold": "差异预览",
-                "text": ": 在预览列表切换，右侧实时查看 Diff。"
-            },
-            "step4": {
-                "bold": "安全导入",
-                "text": ": 点击“开始导入”，ResBeaver 将智能合并词条并直接写入磁盘。"
+            "workflow": {
+                "title": "操作流程",
+                "step1": {
+                    "bold": "选择项目",
+                    "text": ": 指向 Android 工程根目录（自动识别模块）。"
+                },
+                "step2": {
+                    "bold": "选择翻译",
+                    "text": ": 选择包含翻译资源的文件夹（支持识别文件名中的 Locale）。"
+                },
+                "step3": {
+                    "bold": "差异预览",
+                    "text": ": 在预览列表切换，右侧实时查看 Diff。"
+                },
+                "step4": {
+                    "bold": "安全导入",
+                    "text": ": 点击“开始导入”，ResBeaver 将智能合并词条并直接写入磁盘。"
+                }
             },
             "advanced": {
                 "title": "🛠️ 进阶功能",
